@@ -54,3 +54,4 @@ common/logs/
 # ===== 截图/抓包数据目录 =====
 bench_client/windows_agent/shots_*/
 bench_client/windows_agent/test_v090/
+*.bak.*
