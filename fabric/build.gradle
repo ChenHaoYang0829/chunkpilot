@@ -1,0 +1,80 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.16.3'
+    id 'java'
+}
+version = rootProject.modVersion
+group = rootProject.modGroup
+def fabMC = "1.21.3"
+def fabLoader = "0.19.3"
+def fabApi = "0.114.1+1.21.3"
+repositories {
+    mavenCentral()
+    maven { url "https://maven.fabricmc.net/" }
+    maven { url "https://maven.architectury.dev/" }
+    gradlePluginPortal()
+}
+dependencies {
+    minecraft "com.mojang:minecraft:${fabMC}"
+    // v0.5.1: 恢复 official mappings (1.21.3 fabric 默认)
+    // 原因: v0.5.1 删除原本依赖 yarn 名的 chunk_send/load mixin, 改为完全主动驱动
+    //       所有 onPlayerChunkUpdate/getChunkToSend 调用都去掉, 改为每 tick 主动遍历玩家
+    //       mixin 只保留 client 端 (ChunkRenderDispatcher, 警告但不报错)
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
+    // 2026-08-01: 1.21.2 需要显式加 fabric-networking-api-v1 (含 ClientPlayNetworking)
+    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:4.3.3+56ec7ac673"
+
+    // P1.1: 静态反射检查 — fabric 测试也要 JUnit
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+loom {
+    mods { "chunkpilot" { sourceSet sourceSets.main } }
+    // 2026-08-02: 分配 16GB 堆给测试服
+    runServer {
+        jvmArgs '-Xmx16G', '-Xms4G'
+    }
+}
+// 2026-08-01: loom 1.16+ 默认不启用 mixin AP, 需要显式开启才能生成 refmap
+loom.mixin {
+    useLegacyMixinAp = true
+    refmapTargetNamespace = "intermediary"
+    defaultRefmapName = "chunkpilot.refmap.json"
+}
+// 引用 common 源码 (不依赖 common 项目, 避免 architectury classpath 污染)
+sourceSets {
+    main {
+        java {
+            srcDir project(':common').sourceSets.main.java
+        }
+        resources {
+            srcDir project(':common').sourceSets.main.resources
+        }
+    }
+    // P1.1: 静态反射测试 — 需要 loom 把 remap 后 MC 类加入 test classpath
+    test {
+        java.srcDir 'src/test/java'
+        resources.srcDir 'src/test/resources'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+// P1.1: 静态反射测试 task 配置
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showStandardStreams = false
+        exceptionFormat = 'full'
+    }
+}
+// 2026-08-01: 1.21.2 fabric-api 拆分了 client 模块, 显式加 client networking
+dependencies {
+}

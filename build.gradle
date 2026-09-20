@@ -1,0 +1,71 @@
+buildscript {
+    configurations.classpath {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    }
+}
+
+plugins {
+    id 'dev.architectury.loom' version '1.13.469' apply false
+    id 'architectury-plugin' version '3.5.169' apply false
+}
+
+ext {
+    // 版本常量
+    minecraftVersion = "1.21.1"
+    
+    // Fabric
+    fabricLoaderVersion = "0.16.9"
+    fabricApiVersion = "0.116.13+1.21.1"
+    yarnMappings = "1.21.1+build.3"
+    
+    // NeoForge
+    neoforgeVersion = "21.1.77"
+    
+    // Architectury
+    architecturyVersion = "13.0.8"
+    
+    // Mod
+    modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
+    modGroup = "com.chunkpilot"
+    modId = "chunkpilot"
+}
+
+subprojects {
+    apply plugin: 'java'
+    // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
+    if (project.name != 'fabric') {
+        apply plugin: 'dev.architectury.loom'
+        apply plugin: 'architectury-plugin'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    if (project.name != 'fabric') {
+        loom {
+            silentMojangMappingsLicense()
+        }
+    }
+
+    // 2026-08-01: minecraft dependency 由各子项目自己设 (fabric 1.21.2, neoforge 1.21.1 不同)
+    // 不在这里注入, 各子项目 build.gradle 自己声明
+
+    repositories {
+        mavenCentral()
+        maven { url "https://maven.fabricmc.net/" }
+        maven { url "https://maven.architectury.dev/" }
+        maven { url "https://repo.papermc.io/repository/maven-public/" }
+        maven { url "https://maven.minecraftforge.net/" }
+        maven { url "https://maven.parchmentmc.org/" }
+    }
+
+    group = modGroup
+    version = modVersion
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}

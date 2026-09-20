@@ -1,0 +1,127 @@
+repositories {
+    maven { url = file("../.local-maven-repo") }
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        // 本地仓库有 11.0.4 但 loader 要求 11.0.3，强制用 11.0.4
+        if (details.requested.group == 'cpw.mods' && details.requested.name == 'modlauncher') {
+            details.useVersion '11.0.4'
+        }
+        // 本地仓库有 3.0.8 但 loader 要求 3.0.7，强制用 3.0.8
+        if (details.requested.group == 'cpw.mods' && details.requested.name == 'securejarhandler') {
+            details.useVersion '3.0.8'
+        }
+    }
+}
+
+architectury {
+    platformSetupLoomIde()
+    neoForge {
+        platformPackage = "forge"
+    }
+}
+
+dependencies {
+    modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
+
+    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
+    implementation "net.neoforged.fancymodloader:loader:4.0.31"
+    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
+    implementation "net.neoforged:bus:8.0.2"
+
+    // Architectury
+    modImplementation "dev.architectury:architectury-neoforge:${rootProject.architecturyVersion}"
+
+    // Mixin 注解
+    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.4.1"
+    implementation "io.github.llamalad7:mixinextras-neoforge:0.4.1"
+
+    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
+    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+
+    // 引用 common 模块源码
+    implementation project(':common')
+
+    // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
+    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
+    mappings loom.officialMojangMappings()
+}
+
+loom {
+    // 2026-08-01: 显式使用 Mojang official mappings
+    officialMojangMappings()
+
+    mixin {
+        defaultRefmapName = "chunkpilot.refmap.json"
+    }
+
+    runs {
+        server {
+            server()
+        }
+        client {
+            client()
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir project(':common').sourceSets.main.java
+        }
+        resources {
+            srcDir project(':common').sourceSets.main.resources
+        }
+    }
+}
+
+// NeoForge 1.21.1 runtime 使用 Mojang 命名 class,而 loom 默认输出 intermediary 命名 remapJar
+// 会导致 NoClassDefFoundError (例如 class_2561 Component)。
+// 解决方案: 禁用 remapJar + 后处理 refmap 为 Mojang 命名
+tasks.named('remapJar').configure { enabled = false }
+
+// 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
+tasks.register('fixRefmap') {
+    doLast {
+        def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")
+        if (!jarFile.exists()) {
+            println "Jar not found: $jarFile"
+            return
+        }
+        def tmpDir = file("$buildDir/tmp/fixrefmap")
+        tmpDir.mkdirs()
+        ant.unjar(src: jarFile, dest: tmpDir)
+        
+        // 写新的 Mojang 命名 refmap
+        def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
+        refmapFile.text = '''{
+  "mappings": {
+    "com/chunkpilot/neoforge/mixin/ChunkMapMixin": {
+      "updatePlayerPos": "Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V",
+      "move": "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"
+    },
+    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderMixin": {
+      "collectChunksToSend": "Lnet/minecraft/server/network/PlayerChunkSender;collectChunksToSend(Lnet/minecraft/server/level/ChunkMap;Lnet/minecraft/world/level/ChunkPos;)Ljava/util/List;"
+    },
+    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderSendMixin": {
+      "sendNextChunks": "Lnet/minecraft/server/network/PlayerChunkSender;sendNextChunks(Lnet/minecraft/server/level/ServerPlayer;)V"
+    },
+    "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
+      "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
+    }
+  }
+}
+'''
+        // 重打包
+        ant.delete(file: jarFile)
+        ant.zip(destfile: jarFile, basedir: tmpDir)
+        println "Fixed refmap in $jarFile"
+    }
+}
+
+// 让 jar 任务依赖 fixRefmap, 确保 build 后 refmap 是 Mojang 命名
+afterEvaluate {
+    tasks.named('jar').configure { finalizedBy('fixRefmap') }
+}

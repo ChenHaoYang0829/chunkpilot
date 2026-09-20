@@ -1,0 +1,34 @@
+pluginManagement {
+    repositories {
+        maven { url "https://maven.fabricmc.net/" }
+        maven { url "https://maven.architectury.dev/" }
+        maven { url "https://repo.papermc.io/repository/maven-public/" }
+        maven { url "https://maven.minecraftforge.net/" }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "dev.architectury.loom") {
+                useModule("dev.architectury:architectury-loom:${requested.version}")
+            }
+            if (requested.id.id == "architectury-plugin") {
+                useModule("architectury-plugin:architectury-plugin.gradle.plugin:${requested.version}")
+            }
+            // 2026-08-01: fabric 官方 loom (fabric-loom-remap 是官方 1.21+ remap fork)
+            if (requested.id.id == "net.fabricmc.fabric-loom-remap") {
+                useModule("net.fabricmc.fabric-loom:net.fabricmc.fabric-loom.gradle.plugin:${requested.version}")
+            }
+            if (requested.id.id == "net.fabricmc.fabric-loom") {
+                useModule("net.fabricmc.fabric-loom:net.fabricmc.fabric-loom.gradle.plugin:${requested.version}")
+            }
+        }
+    }
+}
+
+rootProject.name = 'chunkpilot'
+
+include 'common'
+include 'fabric'
+include 'neoforge'

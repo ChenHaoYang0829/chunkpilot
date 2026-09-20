@@ -1,0 +1,152 @@
+# ChunkPilot v0.7.0-alpha Default Configuration
+# Smart chunk loading optimization for high-speed travel
+
+[general]
+enabled = true
+mode = "sector"
+logLevel = "info"
+
+[speedTiers]
+curveMode = "stepped"
+
+[[speedTiers.tier]]
+name = "walk"
+minSpeed = 0.0
+maxSpeed = 0.75
+coreRadius = -1
+sectorAngle = 0
+sectorRadius = 0
+tailRadius = 0
+
+[[speedTiers.tier]]
+name = "slow_flight"
+minSpeed = 0.75
+maxSpeed = 1.5
+coreRadius = 4
+sectorAngle = 120
+sectorRadius = -1
+tailRadius = 3
+
+[[speedTiers.tier]]
+name = "fast_flight"
+minSpeed = 1.5
+maxSpeed = 2.5
+coreRadius = 4
+sectorAngle = 70
+sectorRadius = -1
+tailRadius = 2
+
+[[speedTiers.tier]]
+name = "extreme_flight"
+minSpeed = 2.5
+maxSpeed = 999.0
+coreRadius = 3
+sectorAngle = 35
+sectorRadius = -2
+tailRadius = 1
+
+[structure]
+enabled = true
+priorityLoading = true
+edgeDelayTicks = 2
+interestingStructures = [
+    "minecraft:village",
+    "minecraft:desert_pyramid",
+    "minecraft:jungle_temple",
+    "minecraft:shipwreck",
+    "minecraft:ocean_ruin",
+    "minecraft:buried_treasure",
+    "minecraft:pillager_outpost",
+    "minecraft:mansion",
+    "minecraft:monument",
+    "minecraft:ancient_city",
+    "minecraft:fortress",
+    "minecraft:bastion_remnant",
+    "minecraft:stronghold",
+    "minecraft:end_city",
+]
+
+[protection]
+maxMspt = 40
+disableMspt = 50
+maxMemoryPercent = 75
+ticketExpiryTicks = 100
+autoLiteMode = true
+liteModeRadius = 6
+# v0.10: 扇形 ticket 硬上限提到 100 (给自适应档位留空间); 每 tick 新增限 4 (压 worldgen 灌量)
+maxSectorTickets = 100
+maxNewTicketsPerTick = 2
+# v0.10: 扇形远处浅层加载 (治本) — 距玩家 8 chunk 内 FULL_TICKING, 之外只生成地形骨架 (CARVERS)
+sectorShallowRadius = 6
+sectorShallowStatus = "surface"
+
+[integration.create]
+enabled = true
+minSpeed = 1.0
+lookAheadChunks = 32
+sectorAngle = 60
+
+[integration.create_aeronautics]
+enabled = true
+minSpeed = 1.0
+sectorAngle = 60
+
+[integration.mtr]
+enabled = true
+lookAheadChunks = 32
+trackSideRadius = 2
+
+[integration.immersive_railroading]
+enabled = true
+lookAheadChunks = 32
+trackSideRadius = 2
+
+[integration.immersive_vehicles]
+enabled = true
+minSpeed = 1.0
+sectorAngle = 80
+
+# v0.5.1 轨道优先生成器 — 旧公式 [100/(v*max(0,d-n)+1) * (l/L)]
+# 扫描时跳过已生成 chunk (isChunkLoaded), 队列不被污染
+# 玩家脚下 chunk 强制高优 (兜底)
+[generation]
+enabled = true               # 用户偏好: 默认开
+v_min = 0.7                  # 速度阈值 (chunks/s)
+n = 5                        # 高优半径 (v0.3.0 默认 8 -> 5, 避免前方 6-8ch 死磕)
+lookAheadSeconds = 5.0       # 预测时长
+predictionTTLSeconds = 5.0   # 预测有效期
+maxChunksPerTick = 1         # Adaptive Controller 上限 (v0.10: 4->2)
+targetMspt = 35.0            # MSPT 目标值
+logBase = 2
+
+# v0.7.0 区块发送顺序 — 激进方向锐化公式
+# w = (cos α + C1)^γ / (1 + k·ρ) * (1 + β·v/v_ref)
+# γ=2 时前/后比 4.5x → 25x, 高速时再加 β·v/v_ref 整体提升
+# γ=1, β=0 退化为 v0.5.0 旧公式
+# 发送器不需要 isChunkLoaded 过滤 — vanilla 的 pendingChunks 已经只含“已生成未发送”
+[chunk_send]
+enabled = false              # v0.7.0: 默认关闭 (1.21.3 ChunkDataSender.makeBatch 私有, 接管未实装)
+v_min = 0.7
+c1 = 1.5                     # 角度保底 (前/后 5x — γ 未加时)
+k = 1.0                      # 距离衰减
+lookAheadSeconds = 5.0
+direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (1=旧版, 2=25x 前/后比)
+v_ref = 1.0                  # v0.7.0: 速度参考 (≈ 16 m/s 跑步峰值)
+v_boost_beta = 0.5           # v0.7.0: 速度加成 (v=5·v_ref 时 ×3.5)
+
+# v0.7.0 客户端自适应渲染 — 激进方向锐化公式 (与服务端对称)
+# 调 γ/β 与 [chunk_send] 一致, 客户端服务端权重一致 → 列表无冲突
+[client_render]
+enabled = false
+target_fps = 60
+c1 = 1.5
+k = 1.0
+lookAheadSeconds = 5.0
+direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致
+v_ref = 1.0                  # v0.7.0
+v_boost_beta = 0.5           # v0.7.0
+frame_window = 60
+stable_threshold_ms = 2.0
+overload_factor = 1.1
+underload_factor = 0.7
+sodium_compatible = true

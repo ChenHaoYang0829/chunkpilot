@@ -1,0 +1,22 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.chunkpilot.fabric.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "chunkpilot.refmap.json",
+  "mixins": [],
+  "server": [
+    "ChunkDataSenderMixin",
+    "ChunkMapGenerationMixin",
+    "ChunkMapTrackingViewMixin",
+    "LevelNonBlockingReadMixin",
+    "PlayerChunkSenderSendMixin",
+    "ServerChunkCacheAccessor",
+    "ServerGamePacketListenerMoveMixin",
+    "ServerChunkCacheNonBlockingMixin"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

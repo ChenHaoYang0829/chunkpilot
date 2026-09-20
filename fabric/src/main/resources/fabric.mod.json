@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "chunkpilot",
+  "version": "0.10.10-alpha",
+  "name": "ChunkPilot",
+  "description": "Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).",
+  "authors": ["ChunkPilot Team"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/chunkpilot/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.chunkpilot.fabric.ChunkPilotFabric"
+    ],
+    "client": [
+      "com.chunkpilot.fabric.client.ChunkPilotFabricClient"
+    ]
+  },
+  "mixins": [
+    "chunkpilot.mixins.json",
+    "chunkpilot.client.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.21.3",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "create": "*",
+    "mtr": "*",
+    "immersiverailroading": "*"
+  }
+}

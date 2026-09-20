@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.chunkpilot.neoforge.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "chunkpilot.client.refmap.json",
+  "mixins": [],
+  "client": [
+    "SodiumRenderSectionManagerMixin",
+    "ChunkRenderDispatcherMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
