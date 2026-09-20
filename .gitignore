@@ -1,0 +1,56 @@
+# ===== 构建产物 =====
+build/
+.gradle/
+.local-maven-repo/
+gradle-*.zip
+*.class
+*.jar
+
+# ===== 服务器运行目录（世界/日志/库/模组/配置，含敏感）=====
+test-server/
+test-server-2/
+test-server-fabric/
+bench_server/
+fabric/run/
+neoforge/run/
+
+# ===== 大测试数据 / 抓包 / 备份 / 结果 =====
+payload
+runtime/
+backup_*/
+clienttest/
+monitoring/*.csv
+monitoring/20*/
+bench_client/windows_agent/*.csv
+bench_client/*.json
+bench_client/*.png
+bench_client/shots_*/
+bench_client/screenshots/
+bench_client/results/
+bench_client/benchbot/runs/
+bench_client/benchbot/__pycache__/
+bench_client/windows_agent/__pycache__/
+bench_client/__pycache__/
+
+# ===== 日志 / 截图 =====
+*.log
+*.png
+*.jpg
+
+# ===== 敏感 =====
+server.properties
+ops.json
+banned-*.json
+*.bak
+
+# ===== 系统 =====
+.DS_Store
+# ===== 源码内误留的备份/日志 =====
+*.bak
+*.bak-*
+*.bak_*
+*.orig
+common/logs/
+# ===== 截图/抓包数据目录 =====
+bench_client/windows_agent/shots_*/
+bench_client/windows_agent/test_v090/
