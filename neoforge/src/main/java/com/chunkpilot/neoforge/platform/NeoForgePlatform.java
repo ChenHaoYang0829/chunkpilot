@@ -2,6 +2,8 @@ package com.chunkpilot.neoforge.platform;
 
 import com.chunkpilot.platform.PlatformAbstraction;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
@@ -429,6 +431,127 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (target == null) target = server.getPlayerList().getPlayer(playerId);
             if (target != null) target.sendSystemMessage(comp);
         }
+    }
+
+    // ==================================================================================
+    // v0.11.10: 非阻塞只读探针 (/chunkpilot probe) —— 与 fabric 侧 3ccbf0c 修好后的**同一口径**
+    //
+    // 背景: main 已经给 neoforge 注册了 probe/diagnose/lang 三个子命令, 但**平台层没人实现**:
+    //   PlatformAbstraction.probeChunk 是 default(返回 "probe unavailable"),
+    //   isChunkLoaded 的 default 是 return false ⇒ 探针列在 neoforge 上永远是空的/恒 false。
+    //   本段把缺的四个方法补齐(实现与 fabric 侧逐行对齐), 于是跑分脚本在 neoforge 上也能拿到
+    //   loaded= / ticketLevel= / fullReady= / levelType= 这些字段。
+    //
+    // 全部非阻塞: hasChunk(一次 map 查找) + ChunkHolder.getTicketLevel(字段读) +
+    //   getFullChunkFuture().getNow(null)(绝不 join)。**不用可读名反射** ——
+    //   fabric 侧就是被它坑过(ticketLevel 恒 -1), 这里用 accessor + 直接调用。
+    // ==================================================================================
+
+    @Override
+    public int getOverworldId() {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            return server == null ? 0 : server.overworld().hashCode();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    @Override
+    public boolean isChunkLoaded(int worldId, int chunkX, int chunkZ) {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return false;
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return false;
+            // 1.21.3 official: ServerChunkCache.hasChunk(int,int) = "ChunkHolder 存在且票等级 <= FULL(33)"
+            return level.getChunkSource().hasChunk(chunkX, chunkZ);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean isChunkReadyFull(int worldId, int chunkX, int chunkZ) {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return false;
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return false;
+            ChunkHolder holder = ((com.chunkpilot.neoforge.mixin.ServerChunkCacheAccessor) level.getChunkSource())
+                .chunkpilot$getVisibleChunkIfPresent(ChunkPos.asLong(chunkX, chunkZ));
+            if (holder == null) return false;
+            java.util.concurrent.CompletableFuture<ChunkResult<net.minecraft.world.level.chunk.LevelChunk>> fut =
+                holder.getFullChunkFuture();
+            if (!fut.isDone()) return false;            // 非阻塞: 没完成就是"没到 FULL"
+            ChunkResult<net.minecraft.world.level.chunk.LevelChunk> res = fut.getNow(null);
+            return res != null && res.isSuccess();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static String chunkpilot$levelTypeName(int level) {
+        if (level < 0) return "unknown";
+        if (level <= 31) return "ENTITY_TICKING";
+        if (level == 32) return "BLOCK_TICKING";
+        if (level == 33) return "FULL";
+        if (level < 44) return "BORDER(部分生成)";
+        return "UNLOADED";
+    }
+
+    @Override
+    public String probeChunk(int worldId, int chunkX, int chunkZ, java.util.UUID viewerId) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.server_not_bound");
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.world_not_found", worldId);
+
+            long posLong = ChunkPos.asLong(chunkX, chunkZ);
+            boolean loaded = isChunkLoaded(worldId, chunkX, chunkZ);
+            int ticketLevel = -1;
+            boolean holderPresent = false;
+            String statusName = "?";
+            try {
+                ChunkHolder holder = ((com.chunkpilot.neoforge.mixin.ServerChunkCacheAccessor) level.getChunkSource())
+                    .chunkpilot$getVisibleChunkIfPresent(posLong);
+                if (holder != null) {
+                    holderPresent = true;
+                    ticketLevel = holder.getTicketLevel();
+                    statusName = chunkpilot$levelTypeName(ticketLevel);
+                }
+            } catch (Throwable ignored) {
+                // 拿不到 holder 就保留 -1/false, 不影响其它字段
+            }
+
+            int pcx = 0, pcz = 0;
+            double best = -1;
+            for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+                if (sp.level() != level) continue;
+                int cx = sp.chunkPosition().x, cz = sp.chunkPosition().z;
+                double d = Math.hypot(chunkX - cx, chunkZ - cz);
+                if (best < 0 || d < best) {
+                    best = d; pcx = cx; pcz = cz;
+                }
+            }
+
+            boolean fullReady = isChunkReadyFull(worldId, chunkX, chunkZ);
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.line",
+                chunkX, chunkZ, chunkX << 4, chunkZ << 4, loaded, holderPresent,
+                ticketLevel, fullReady, statusName));
+            if (best >= 0) {
+                sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.nearest", pcx, pcz, best));
+            }
+            // ⚠ 故意**不输出** chunkpilot.probe.marks(cpRequested/cpTicketed):
+            //   neoforge 侧没有 fabric 那套 requestedChunks/ticketedChunks 跟踪集合, 硬填 false
+            //   就是第二个 3ccbf0c 式的假信号。跑分脚本读不到 cpTicketed 就留空 —— 留空是诚实的。
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.view", getServerRenderDistance()));
+        } catch (Throwable t) {
+            return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.failed", String.valueOf(t));
+        }
+        return sb.toString();
     }
 
     @Override

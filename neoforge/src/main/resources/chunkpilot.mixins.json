@@ -11,7 +11,8 @@
     "PlayerChunkSenderSendMixin",
     "ServerPlayerMixin",
     "CheckExtensibleEnumsMixin",
-    "ChunkMapNonBlockingUnloadMixin"
+    "ChunkMapNonBlockingUnloadMixin",
+    "ServerChunkCacheAccessor"
   ],
   "client": [],
   "injectors": {
