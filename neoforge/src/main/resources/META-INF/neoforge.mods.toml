@@ -23,7 +23,7 @@ side = "BOTH"
 modId = "minecraft"
 type = "required"
 versionRange = "${mcRange}"
->ordering = "NONE"
+ordering = "NONE"
 side = "BOTH"
 
 # 2026-09-24 死代码清理: 原有一条 [[dependencies.chunkpilot]] modId="architectury" type="required" —— 已删除。
