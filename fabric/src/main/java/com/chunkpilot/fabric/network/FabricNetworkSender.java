@@ -9,7 +9,8 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+// 1.21.11: ResourceLocation 已更名为 net.minecraft.resources.Identifier (javap 实证)
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -37,7 +38,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
 
     public record CapabilityPayload(boolean hasCP, String version, int protocol) implements CustomPacketPayload {
         public static final Type<CapabilityPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "capability"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "capability"));
         public static final StreamCodec<RegistryFriendlyByteBuf, CapabilityPayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.BOOL, CapabilityPayload::hasCP,
@@ -49,7 +50,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
 
     public record ClientCapabilityPayload(boolean hasCP, int protocol) implements CustomPacketPayload {
         public static final Type<ClientCapabilityPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "client_capability"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "client_capability"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ClientCapabilityPayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.BOOL, ClientCapabilityPayload::hasCP,
@@ -60,7 +61,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
 
     public record ConfigOverridePayload(int targetFps, int meshingQueueSize, float avgFrameTime, boolean renderEnabled) implements CustomPacketPayload {
         public static final Type<ConfigOverridePayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "config_override"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "config_override"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ConfigOverridePayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.INT, ConfigOverridePayload::targetFps,
@@ -74,7 +75,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
     public record PriorityHintPayload(int playerChunkX, int playerChunkZ, float speed, float direction,
                                        List<ChunkPriorityHintPacket.ChunkPriority> priorities) implements CustomPacketPayload {
         public static final Type<PriorityHintPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "priority_hint"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "priority_hint"));
         public static final StreamCodec<RegistryFriendlyByteBuf, PriorityHintPayload> STREAM_CODEC =
             new StreamCodec<>() {
                 @Override
@@ -142,7 +143,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
 
         ServerPlayNetworking.registerGlobalReceiver(ClientCapabilityPayload.TYPE,
             (payload, context) -> {
-                context.player().getServer().execute(() ->
+                context.player().level().getServer().execute(() ->
                     handler.onClientCapability(context.player().getUUID(), payload.hasCP(), payload.protocol()));
             });
 
@@ -151,7 +152,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
                 var override = new ClientConfigOverridePacket(
                     payload.targetFps(), payload.meshingQueueSize(),
                     payload.avgFrameTime(), payload.renderEnabled());
-                context.player().getServer().execute(() ->
+                context.player().level().getServer().execute(() ->
                     handler.onClientConfigOverride(context.player().getUUID(), override));
             });
     }
