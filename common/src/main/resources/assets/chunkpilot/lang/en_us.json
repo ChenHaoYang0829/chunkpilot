@@ -104,7 +104,7 @@
   "chunkpilot.command.lang.auto_set": "§alanguage set to auto §7(players follow their client language; console uses en_us) [runtime only]",
   "chunkpilot.command.lang.unknown": "§cUnknown language: §e%1$s§c — available: §e%2$s",
   "chunkpilot.command.lang.usage": "§cUsage: /chunkpilot lang [auto|%1$s]",
-  "chunkpilot.probe.line": "chunk=(%1$d,%2$d) block=(%3$d,%4$d) loaded=%5$s holder=%6$s ticketLevel=%7$d completedLevel=%8$d levelType=%9$s",
+  "chunkpilot.probe.line": "chunk=(%1$d,%2$d) block=(%3$d,%4$d) loaded=%5$s holder=%6$s ticketLevel=%7$d fullReady=%8$s levelType=%9$s",
   "chunkpilot.probe.nearest": "  nearestPlayerChunk=(%1$d,%2$d) dist=%3$.1f ch",
   "chunkpilot.probe.marks": "  cpRequested=%1$s cpTicketed=%2$s",
   "chunkpilot.probe.view": "  [view-distance=%1$d]",
@@ -112,5 +112,6 @@
   "chunkpilot.probe.world_not_found": "world %1$s not found",
   "chunkpilot.probe.failed": "probe failed: %1$s",
   "chunkpilot.log.c2me_detected": "[ChunkPilot] C2ME detected: sector ticket management is disabled to avoid unload conflicts (forward window stays active)",
-  "chunkpilot.log.forward_failed": "[ChunkPilot] forward window update failed (#%1$d): %2$s"
+  "chunkpilot.log.forward_failed": "[ChunkPilot] forward window update failed (#%1$d): %2$s",
+  "chunkpilot.log.config_released": "[ChunkPilot] first run: released the reference config to %1$s (existing files are never overwritten; edit it, then run /chunkpilot reload config)"
 }

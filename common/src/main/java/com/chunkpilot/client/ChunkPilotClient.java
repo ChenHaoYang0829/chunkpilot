@@ -124,18 +124,9 @@ public class ChunkPilotClient {
         return config;
     }
 
-    public ChunkRenderScheduler getScheduler() {
-        return scheduler;
-    }
-
     /** 维度切换/传送后重置 */
     public void reset() {
         scheduler.reset();
-    }
-
-    /** 获取网络处理器 */
-    public ClientNetworkHandler getNetworkHandler() {
-        return networkHandler;
     }
 
     /**

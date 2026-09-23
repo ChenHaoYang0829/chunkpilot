@@ -21,8 +21,4 @@ public final class NonBlockingStats {
     public static long parkSubstitutions() {
         return PARK_SUBSTITUTIONS.get();
     }
-
-    public static void reset() {
-        PARK_SUBSTITUTIONS.set(0);
-    }
 }

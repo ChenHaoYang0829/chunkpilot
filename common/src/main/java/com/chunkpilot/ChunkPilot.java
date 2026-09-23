@@ -15,7 +15,6 @@ import org.slf4j.LoggerFactory;
  */
 public class ChunkPilot {
     public static final String MOD_ID = "chunkpilot";
-    public static final String MOD_NAME = "ChunkPilot";
     public static final String VERSION = "0.10.10-alpha";
 
     private static final Logger LOG = LoggerFactory.getLogger("ChunkPilot");
