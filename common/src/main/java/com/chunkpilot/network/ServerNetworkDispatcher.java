@@ -125,16 +125,6 @@ public class ServerNetworkDispatcher {
         clientOverrides.remove(playerId);
     }
 
-    /** 客户端是否装了 CP */
-    public boolean isClientCPEnabled(UUID playerId) {
-        return cpEnabledClients.contains(playerId);
-    }
-
-    /** 获取客户端覆写 (可能为 null) */
-    public ClientConfigOverridePacket getClientOverride(UUID playerId) {
-        return clientOverrides.get(playerId);
-    }
-
     /** 生成附近区块坐标列表 */
     private List<int[]> getNearbyChunks(int centerX, int centerZ, int radius) {
         List<int[]> chunks = new ArrayList<>((2 * radius + 1) * (2 * radius + 1));

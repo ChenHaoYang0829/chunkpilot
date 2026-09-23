@@ -22,8 +22,9 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
-    // 2026-08-01: 1.21.2 需要显式加 fabric-networking-api-v1 (含 ClientPlayNetworking)
-    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:5.0.13+d269470c7d"
+    // 2026-09-24 死代码盘点: 这行显式 pin 是多余的 —— fabric-api 聚合包已包含 networking-api-v1,
+    //   且该 pin 的版本 (4.3.3) 与 fabric-api 版本不一致, 注释"1.21.2 需要"也已过时 (模块早已是 1.21.3)。
+    //   实测删除后 :fabric:build 仍 BUILD SUCCESSFUL。networking 能力本身由 fabric-api 提供, 不受影响。
 
     // P1.1: 静态反射检查 — fabric 测试也要 JUnit
     testImplementation platform('org.junit:junit-bom:5.10.2')
@@ -77,4 +78,13 @@ test {
 }
 // 2026-08-01: 1.21.2 fabric-api 拆分了 client 模块, 显式加 client networking
 dependencies {
+}
+
+// 2026-09-24: 让元数据里的 MC 版本从构建变量展开, 而不是手写 ——
+//   手写极容易漏改(实测出现过"1.21.5 的 jar 里写着 minecraft=1.21.3"⇒ 在 1.21.5 上被 loader 直接拒绝加载)。
+processResources {
+    inputs.property "mcVersion", fabMC
+    filesMatching("fabric.mod.json") {
+        expand(mcVersion: fabMC)
+    }
 }

@@ -35,9 +35,4 @@ public final class MoveGuard {
         int[] d = DEPTH.get();
         return d[0] > 0;
     }
-
-    /** 兜底: 异常路径漏掉 exit 时的手工清理 (由 tick 钩子调用). */
-    public static void reset() {
-        DEPTH.remove();
-    }
 }
