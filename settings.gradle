@@ -31,4 +31,11 @@ rootProject.name = 'chunkpilot'
 
 include 'common'
 include 'fabric'
-include 'neoforge'
+// port/1.21.9: 允许只构建 fabric (`-PskipNeoforge`).
+// 原因: NeoForge 21.9.16-beta 的 :neoforge 项目在**配置阶段**就去解析 neoforge userdev +
+//      整条 fancymodloader/modlauncher/securejarhandler 依赖链 (1.21.1 时靠 .local-maven-repo 垫的
+//      那几个版本在 21.9 上全部要换), 实测单次配置 >10 分钟并反复卡住, 会把 :fabric:* 一起拖死。
+//      不加该参数时行为与改动前**完全一致** (仍然 include 'neoforge')。
+if (!gradle.startParameter.projectProperties.containsKey('skipNeoforge')) {
+    include 'neoforge'
+}

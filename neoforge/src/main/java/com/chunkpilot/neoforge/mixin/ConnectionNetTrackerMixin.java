@@ -21,8 +21,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // 1.21.9 javap 实证: `Connection.send` 的第二个参数从 `PacketSendListener` 换成了
+    //   `io.netty.channel.ChannelFutureListener`:
+    //     public void send(Packet<?>, io.netty.channel.ChannelFutureListener, boolean)
+    //   (`net.minecraft.network.PacketSendListener` 仍然存在, 但已经退化成"产生 ChannelFutureListener
+    //    的工具类": thenRun(Runnable)/exceptionallySend(Supplier) 都返回 ChannelFutureListener.)
+    //   旧描述符在 1.21.9 上匹配不到任何方法 → Mixin ApplyError → NeoForge 启动崩溃.
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();

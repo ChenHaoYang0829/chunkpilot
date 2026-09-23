@@ -195,7 +195,7 @@ public class ChunkPilotNeoForge {
         SuggestionProvider<CommandSourceStack> playerSuggest = (context, builder) -> {
             return SharedSuggestionProvider.suggest(
                 context.getSource().getServer().getPlayerList().getPlayers().stream()
-                    .map(p -> p.getGameProfile().getName()),
+                    .map(p -> p.getGameProfile().name()),
                 builder
             );
         };
@@ -311,7 +311,7 @@ public class ChunkPilotNeoForge {
     private static int runMain(CommandContext<CommandSourceStack> ctx, String[] args) {
         var player = ctx.getSource().getPlayer();
         UUID execId = player != null ? player.getUUID() : null;
-        String name = player != null ? player.getGameProfile().getName() : "console";
+        String name = player != null ? player.getGameProfile().name() : "console";
         // v0.11.9: 权限判定集中在 ChunkPilotCommand (堵住 /chunkpilot 无参绕过 requires 的问题)
         String resp = ChunkPilotCommand.execute(execId, name, args, permLevel(ctx.getSource()));
         for (String line : resp.split("\n")) {

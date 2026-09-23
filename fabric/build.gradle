@@ -1,12 +1,12 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.16.3'
+    id 'net.fabricmc.fabric-loom-remap' version '1.17.21'
     id 'java'
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabMC = "1.21.9"
+def fabLoader = "0.19.5"
+def fabApi = "0.134.1+1.21.9"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }
@@ -23,7 +23,7 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
     // 2026-08-01: 1.21.2 需要显式加 fabric-networking-api-v1 (含 ClientPlayNetworking)
-    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:4.3.3+56ec7ac673"
+    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:5.0.13+d269470c7d"
 
     // P1.1: 静态反射检查 — fabric 测试也要 JUnit
     testImplementation platform('org.junit:junit-bom:5.10.2')
