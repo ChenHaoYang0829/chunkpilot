@@ -4,9 +4,9 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabMC = "1.21.4"
+def fabLoader = "0.19.5"
+def fabApi = "0.119.4+1.21.4"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }

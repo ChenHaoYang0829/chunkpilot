@@ -10,18 +10,19 @@ plugins {
 }
 
 ext {
-    // 版本常量
-    minecraftVersion = "1.21.1"
+    // 版本常量  (2026-09-24: port/1.21.4 — 坐标见 PORT_MATRIX.md)
+    minecraftVersion = "1.21.4"
     
     // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.119.4+1.21.4"
+    yarnMappings = "1.21.4+build.8"
     
     // NeoForge
-    neoforgeVersion = "21.1.77"
+    neoforgeVersion = "21.4.157"
     
-    // Architectury
+    // Architectury: 2026-09-24 main 已彻底移除 architectury(依赖/architectury{}块/mods.toml 声明),
+    //   本变量随之失效, 保留不再被任何模块引用。
     architecturyVersion = "13.0.8"
     
     // Mod
