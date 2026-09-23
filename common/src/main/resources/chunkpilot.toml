@@ -1,10 +1,56 @@
-# ChunkPilot v0.7.0-alpha Default Configuration
-# Smart chunk loading optimization for high-speed travel
+# ChunkPilot 参考配置 (可直接拷到服务端 config/chunkpilot.toml)
+#
+# 说明: 本文件是**交付用参考配置**. v0.11.10 起, 首次启动时若一个配置文件都没有
+#       (config/chunkpilot.toml / chunkpilot.toml / ../config/chunkpilot.toml 都不存在),
+#       mod 会把本文件释放到 config/chunkpilot.toml 并在日志里提示; **已存在则绝不覆盖**,
+#       之后与手抄一份完全等价 (运行时只读文件系统上这一份, 不读 jar 内的模板).
+#
+# ============================ 定位: 参考值, 不全是代码默认值 ============================
+# 本文件给的是**推荐值**. 下面 14 个键的取值与代码里的字段默认值不同 —— 都是实测调优值
+# 或为"拷走模板的服主"准备的开箱值, 不是笔误 (代码默认值往往是更保守的那一个):
+#
+#   [generation] enabled                                = true  (代码默认 false) ← 见下方专门说明
+#   [generation] lookAheadSeconds                       = 5.0   (代码默认 3.0)
+#   [chunk_send] k                                      = 1.0   (代码默认 0.6)
+#   [chunk_send] lookAheadSeconds                       = 5.0   (代码默认 3.0)
+#   [chunk_send] direction_gamma                        = 2.0   (代码默认 4.0; 该键当前只被展示, 不参与计算)
+#   [chunk_send] v_boost_beta                           = 0.5   (代码默认 1.0; 同上)
+#   [client_render] k                                   = 1.0   (代码默认 0.15)
+#   [client_render] lookAheadSeconds                    = 5.0   (代码默认 3.0)
+#   [client_render] direction_gamma                     = 2.0   (代码默认 4.0; 该字段无读取点, 待决策)
+#   [client_render] v_boost_beta                        = 0.5   (代码默认 1.0; 同上)
+#   [integration.create] lookAheadChunks                = 32    (代码默认 8)
+#   [integration.mtr] lookAheadChunks                   = 32    (代码默认 8)
+#   [integration.immersive_railroading] lookAheadChunks  = 32   (代码默认 8)
+#   [integration.immersive_vehicles] sectorAngle         = 80   (代码默认 60)
+#
+# 特别注意 [generation] enabled: 模板给 true, 而**代码默认值是 false**。
+#   即: 拷走这份模板的服主直接获得生成功能; 而**完全不写配置文件**的服务器上, 生成器是
+#   **关闭**的。这个差异是刻意的 (模板面向"想开箱能用"的服主, 代码默认面向"最保守"),
+#   但必须知情 —— 想关掉改成 false 即可。
+#
+# 其余所有键的取值都等于代码里的字段默认值 (可用 /chunkpilot config show 对照).
 
 [general]
 enabled = true
 mode = "sector"
 logLevel = "info"
+# 输出语言: "auto" = 玩家消息跟随其客户端语言, 控制台/日志用 en_us; 也可写死 "zh_cn" / "en_us".
+language = "auto"
+
+# ===== [speed] 速度追踪 =====
+# 速度是下游所有机制 (扇形票 / 生成器 / 发送排序 / 前瞻窗口) 的输入, 这里调的是"速度怎么算".
+[speed]
+# 滑窗大小 (tick, 20 = 1 秒). 调大 → 速度更平滑但反应更迟钝 (起飞/急停滞后); 调小 → 更灵敏但抖动大, 会让扇形每 tick 重算.
+windowTicks = 20
+# 近期加权段的 tick 数: 窗口均值与"最近这段"的均值各占 50% 权重. 调大 → 更看重长期均值(稳), 调小 → 更看重瞬时(快但抖).
+recentTicks = 5
+# 低速阈值 (blocks/tick): 低于此值认为无需干预, 不发票/不参与高速机制 (0.75 b/t ≈ 15 b/s, 略高于鞘翅巡航).
+# 调太低 → 走路/跑步也触发预加载, 白耗性能; 调太高 → 鞘翅巡航速度骑在阈值上, 反复启停(抖动).
+lowSpeedThreshold = 0.75
+# 滞回下限 (blocks/tick): 速度掉到 <= 此值才真正拆除扇形票, 防止速度在阈值附近抖动导致每 tick 整拆整建.
+# 必须 < lowSpeedThreshold. 两者间距越大越抗震, 但"落地后仍保留票"的时间越长 (默认间距 0.3 约 1 秒).
+lowSpeedRevoke = 0.45
 
 [speedTiers]
 curveMode = "stepped"
@@ -86,10 +132,45 @@ maxNewTicketsPerTick = 2
 sectorShallowRadius = 6
 sectorShallowStatus = "surface"
 
+# ===== 非阻塞区块读取 (v0.11.6, 治"墙"/"停摆"/"无 C2ME 崩"的根因) =====
+# 背景: 1.21.3 的碰撞/流体/方块读取在区块未生成完时会走 mainThreadProcessor.managedBlock(future)
+#       → **主线程原地 park** (实测单次 2.8~45 秒), 最终被 Server Watchdog 判为单 tick 60 秒强制关服.
+# 打开后: 未就绪区块按原版"区块不存在"处理 (无碰撞/AIR/EMPTY), 主线程永不 park.
+# 开关 A: 碰撞查询 (Entity.move → collectColliders → getChunkForCollisions).
+#   语义与客户端一致 (客户端没加载的区块本来就没碰撞), 因此回弹反而更少. 一般不需要关.
+nonBlockingCollision = true
+# 开关 B: 方块/流体读取 (实体 tick 的 updateFluidHeightAndDoFluidPushing → getFluidState → getChunkAt).
+#   true = 全局生效 (未就绪区块 getBlockState→AIR, getFluidState→EMPTY);
+#   false = 只在"玩家移动包处理期间"生效 (更保守, 但实体 tick 仍可能停摆). 默认 false.
+nonBlockingReads = false
+# 开关 C: 最激进的一项 —— ServerChunkCache.getChunk 本身 (未到 FULL 直接返回空气区块).
+#   一次性覆盖碰撞/流体/生物群系/方块读取等所有 park 入口. 默认 false; 打开前建议先确认 A/B 已足够.
+nonBlockingGetChunk = false
+
+# ===== Mod 联动 (载具 Provider) =====
+# 总开关: false = 完全跳过 IntegrationManager 调度 (不检测、不注册任何载具 Provider).
+[integration]
+enabled = true
+
+# 每个 [integration.<mod>] 一节对应一个 Provider; 该节的 enabled 控制这个 Provider 是否注册
+# (还要该 mod 真的装了才会注册).
+# 键的适用范围由 Provider 类型决定 —— 解析器对任何 mod 节都接受下面全部键, 但用不到的键在
+# 该节上不生效 (改了不起作用):
+#   固定轨道型 (MTR / Immersive Railroading, 以及检测到火车类的 Create):
+#     lookAheadChunks = 沿轨道路径向前预加载多少区块
+#     trackSideRadius = 轨道两侧各预加载多少区块 (0 = 只加载轨道本身)
+#     cacheTicks      = 反射探测结果 (轨道路径) 的缓存时长 (tick); 调小 → 每 tick 反射更频繁(CPU),
+#                       调大 → 载具位置/路径更新更迟钝. v0.11.10 起该键真正生效 (此前被解析但无人使用)
+#   高速无轨型 (Create: Aeronautics / Immersive Vehicles, 以及 Create 的 contraption):
+#     minSpeed        = 进入扇形加载的最低速度
+#     sectorAngle     = 扇形角度 (度); 调大覆盖更宽但前方集中度下降
+#   (后两节没有轨道路径缓存, 因此 cacheTicks 在那里不生效, 故不写出)
 [integration.create]
 enabled = true
 minSpeed = 1.0
 lookAheadChunks = 32
+trackSideRadius = 2
+cacheTicks = 10
 sectorAngle = 60
 
 [integration.create_aeronautics]
@@ -101,56 +182,145 @@ sectorAngle = 60
 enabled = true
 lookAheadChunks = 32
 trackSideRadius = 2
+cacheTicks = 10
 
 [integration.immersive_railroading]
 enabled = true
 lookAheadChunks = 32
 trackSideRadius = 2
+cacheTicks = 10
 
 [integration.immersive_vehicles]
 enabled = true
 minSpeed = 1.0
 sectorAngle = 80
 
-# v0.5.1 轨道优先生成器 — 旧公式 [100/(v*max(0,d-n)+1) * (l/L)]
+# 生成器 — v0.8.0 起改用 deadline 排序 (DeadlineGenerationSorter, deadline = ρ / max(v, v_min)).
+# 注意: v0.3.0 旧权重公式的参数 n / logBase 已移除, 不再有对应配置键 (写了也会被忽略).
 # 扫描时跳过已生成 chunk (isChunkLoaded), 队列不被污染
 # 玩家脚下 chunk 强制高优 (兜底)
 [generation]
 enabled = true               # 用户偏好: 默认开
 v_min = 0.7                  # 速度阈值 (chunks/s)
-n = 5                        # 高优半径 (v0.3.0 默认 8 -> 5, 避免前方 6-8ch 死磕)
 lookAheadSeconds = 5.0       # 预测时长
 predictionTTLSeconds = 5.0   # 预测有效期
 maxChunksPerTick = 1         # Adaptive Controller 上限 (v0.10: 4->2)
 targetMspt = 35.0            # MSPT 目标值
-logBase = 2
 
-# v0.7.0 区块发送顺序 — 激进方向锐化公式
-# w = (cos α + C1)^γ / (1 + k·ρ) * (1 + β·v/v_ref)
-# γ=2 时前/后比 4.5x → 25x, 高速时再加 β·v/v_ref 整体提升
-# γ=1, β=0 退化为 v0.5.0 旧公式
+# --- deadline 排序 / 扇形扫描 (v0.8.0) ---
+# 稳定飞行时的扇形半角 (度): 候选集 = 速度方向 ± 此角度.
+# 调大 → 覆盖更宽(转弯不易漏), 但候选与生成请求变多、前方集中度下降; 调小 → 更聚焦正前方, 但急转时漏掉侧前方.
+sectorAngleBaseDeg = 60.0
+# 急转时的扇形半角上限 (度): 方向变化大时扇区自适应放宽到此值. 调小 → 转弯瞬间跟不上; 调大 → 转向时生成量骤增.
+sectorAngleMaxDeg = 90.0
+# 静止判定阈值 (m/s): 低于此值视为静止, 回退"全向 + 纯距离排序"(不再按方向优先). 调大 → 慢走也按方向优先; 调小 → 更早进全向模式.
+vMinMs = 0.5
+
+# --- 浅层预生成 (v0.6.0): 远处只生成"地形骨架", 避免方块实体提前进主线程 ---
+# 调 false → 远处也 FULL 生成, 新世界/高速飞行时 worldgen 压力与 MSPT 明显上升.
+shallowGenerationEnabled = true
+# 浅层目标 ChunkStatus 名. 1.21.3 有效名如 "surface" (噪声+地表, 无特征/方块实体);
+# 注意: 旧的 "CARVERS" 在 1.21.3 已不是有效状态名 (会被解析成"完全不生成").
+shallowTargetStatus = "surface"
+# 距离阈值 (chunks): d <= 此值生成到 FULL, 之外用浅层.
+# 调大 → FULL 区域变大(更"正常"但更重, 高速飞行易灌爆 worldgen); 调小 → 更省, 但玩家接近时等 vanilla 补 FULL 的时间变长.
+shallowDistanceRadius = 2
+
+# --- FULL 待办回补队列 (v0.6.0): "高负载囤需求, 低负载消化" ---
+# 本该 FULL 但本 tick 没生成完的区块不丢弃, 留在待办里等负载低时回补.
+# 调 false → 需求被 TTL 直接丢弃, 长途高速飞行后容易留下"前方未生成"的洞.
+deferredFullQueueEnabled = true
+# 待办容量上限 (条): 超容量时淘汰权重最低的条目并打 warn 日志.
+# 调太小 → 频繁淘汰, 回补收益下降; 调太大 → 高负载时占用更多内存.
+deferredFullQueueMax = 8192
+# 回补触发余量 (ms): 只有 MSPT < targetMspt - 此值 时才回补 FULL. 调大 → 只在很闲时回补(稳); 调小 → 更容易回补但可能把 MSPT 顶上去.
+deferredFullMsptMargin = 10.0
+# 每 tick 最多回补几个 FULL. 调大 → 回补更快, 但每 tick 冲击更大 (可能推高 MSPT).
+deferredFullMaxPerTick = 2
+# 待办条目"不再相关之后"的保留时长 (tick, 1200 = 60 秒): 玩家飞远、不再是任何玩家的候选之后,
+# 再保留这么久仍未生成才移除. 这是防内存无界的安全阀, **不是**"没生成就丢";
+# 调小 → 内存更省, 但长途飞行折返时可能重新生成.
+deferredFullTtlTicks = 1200
+
+# --- 独占生成 / 在途请求窗口 (v0.9.0 / v0.11.0) ---
+# 独占生成 (**仅无 C2ME 时生效**): 拦截 ChunkMap.scheduleGenerationTask, 只放行 CP 自己请求的区块, 停掉原版自动生成.
+# 有 C2ME 时本项被忽略 (C2ME 自己管生成). 调 false → 原版自动生成与 CP 预生成叠加, 无 C2ME 时极易塞满生成队列 → MSPT 飙升/掉线.
+exclusiveGenerationNoC2me = true
+# 在途请求窗口上限 (条): 只有"已请求但还没生成完"的区块数低于此值才发新请求, 使请求速率自动跟随 worldgen 实际吞吐.
+# 0 或负数 = 关闭限流 (回退旧行为). 调太大 → 无 C2ME 时 worldgen 积压、MSPT 飙升; 调太小 → 预生成吞吐被压住, 前方前沿变浅.
+maxOutstandingRequests = 32
+# 在途条目 TTL (tick): 超过这么久仍未加载完就强制移出窗口.
+# 调太大 → 窗口可能被"永远生成不完"的区块占满 (预生成停摆); 调太小 → 正常排队中的请求被误踢, 造成重复请求.
+outstandingTtlTicks = 200
+# (v0.11.8) "跳过已生成区块"改用**真正的 FULL 判定** (isChunkReadyFull) 而不是"已排期"(isChunkLoaded).
+# 默认 false 保持旧行为; 打开后调度器才会真的对"已排期但还没生成完"的前方区块下 FULL 票 —— 建议同时观察 MSPT 与前方前沿.
+strictSkipGenerated = false
+
+# 区块发送顺序 (v0.9.0 投影版权重)
+# w = [v·(c-p)/|c-p|] / (1 + k·ρ)     ← 分子是"接近速度"(点乘), 已同时含方向与速度
+# 注意: v0.7.0 的 c1 (角度保底) / v_ref (速度参考) 已移除 (改为硬编码常量), 不再是配置键;
+#       direction_gamma / v_boost_beta 仍会被解析并出现在 /chunkpilot send status,
+#       但投影公式本身不使用它们 (只使用 k).
 # 发送器不需要 isChunkLoaded 过滤 — vanilla 的 pendingChunks 已经只含“已生成未发送”
 [chunk_send]
 enabled = false              # v0.7.0: 默认关闭 (1.21.3 ChunkDataSender.makeBatch 私有, 接管未实装)
 v_min = 0.7
-c1 = 1.5                     # 角度保底 (前/后 5x — γ 未加时)
 k = 1.0                      # 距离衰减
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (1=旧版, 2=25x 前/后比)
-v_ref = 1.0                  # v0.7.0: 速度参考 (≈ 16 m/s 跑步峰值)
-v_boost_beta = 0.5           # v0.7.0: 速度加成 (v=5·v_ref 时 ×3.5)
+direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (当前仅展示, 不参与计算)
+v_boost_beta = 0.5           # v0.7.0: 速度加成 (当前仅展示, 不参与计算)
 
-# v0.7.0 客户端自适应渲染 — 激进方向锐化公式 (与服务端对称)
-# 调 γ/β 与 [chunk_send] 一致, 客户端服务端权重一致 → 列表无冲突
+# ===== 前瞻窗口 Forward Look-ahead Window (v0.11.6) =====
+# 原版给玩家的是**以玩家为中心**的对称窗口 ([p-vd, p+vd]): 高速前进时, 前方 vd 区块处的区块
+# 此刻才开始生成, 而玩家 vd/(v/16) 秒后就到了 → 撞上"还没送达"的区块 → 服务端认为玩家在方块里
+# → moved wrongly → 回弹("墙"). 本功能把加载/可见窗口**整体前移**:
+#   生成侧: 在玩家前方 A 区块处放一张锚点票 (等级 = max(2, 33-vd) + A - B)
+#           → 前方可加载距离从 vd 变成 vd + B, 后方仍是 vd (不会断依赖链)
+#   发送侧: 把该玩家的 ChunkTrackingView 中心前移 S 区块
+#           → 可见范围变成 前 vd+S / 后 vd-S, 前方区块一旦生成就立刻下发, 不必等玩家走近
+# 两种环境都生效 (含 C2ME): 只动"票"与"跟踪窗口", 不碰 C2ME 的调度器.
+[forward_window]
+# 总开关: false = 完全回退原版行为 (锚点票与跟踪窗口都不动).
+enabled = true
+# 激活速度阈值 (chunks/s): 低于此值不做任何干预 (静止/走路保持原版).
+# 调高 → 更多场景回退原版; 调低 → 慢速也前移窗口 (身后区块会更早离开可见范围).
+minSpeed = 0.7
+# A = 锚点前移量 (chunks): 锚点票放在 player + A·dir 处. A = 0 → 关闭生成侧前移, 只保留发送侧前移.
+# 推荐值: **A ≈ 视距 + forwardExtra/2** (视距 10, forwardExtra 6 → A = 13).
+# 原因: 锚点带来的额外加载面积只与 B(forwardExtra) 有关、与 A 无关; A 越大 → 锚点等级越高 →
+#       锚点所在的那个方块越小 → 落在"玩家自身方块之外"的多余部分越省.
+# (实测 A=13 只多加载 42 格, A=8 要 102 格; 同样把前方可达从 10 推到 16, 5-bot 巡航 MSPT 28ms → 16~20ms)
+aheadChunks = 13
+# B = 生成侧前向延伸量 (chunks): 锚点等级 = max(2, 33-vd) + A - B.
+#   B = 0 → 锚点等级等于原版该位置的等级 → 无效果 (等同关闭生成前移);
+#   B = A → 锚点等级等于玩家自身区块等级 (前移最猛, 前方可达 vd+A).
+# 有效范围 [0, A], 超出会被钳制到该范围.
+forwardExtra = 6
+# S = 发送侧 (ChunkTrackingView 中心) 前移量 (chunks); -1 = 用 aheadChunks.
+# 会被钳制到 <= min(forwardExtra, 视距-2) —— 必须保证玩家自身仍在可见窗口内.
+# S 越大 → 前方可见越远、集中度越高, 但玩家身后留在窗口内的区块越少 (身后更容易出现未加载).
+trackingShift = 6
+# 锚点重算/续票的最小间隔 (tick). 1 = 每 tick 重算 (最灵敏也最贵); 调大 → 转向/变速反应变慢, 但 CPU 更省.
+updateTicks = 2
+# 锚点票续期周期 (tick). CP ticket 的 lifespan = 31 tick, 必须小于它, 否则票到期 → 区块卸载抖动.
+refreshTicks = 20
+# 转向抑制阈值 (度): 方向变化超过它时立即重算锚点 (不等 updateTicks), 防止转弯后锚点还留在旧方向.
+# 调大 → 更迟才搬锚点 (省性能, 但转弯瞬间可能跟不上); 调小 → 更频繁搬锚点.
+turnThresholdDeg = 25.0
+# 速度上限保护 (chunks/s): 超过视为传送/异常, 不做任何前移 (避免把窗口甩到极远处).
+maxSpeed = 200.0
+
+# 客户端自适应渲染 (与服务端 [chunk_send] 对称, 同用 v0.9.0 投影公式)
+# 注意: c1 / v_ref 已移除; 本节的 direction_gamma / v_boost_beta 当前**没有任何读取点**
+#       (连 /chunkpilot send status 都不显示它们 — 那里显示的是 [chunk_send] 的同名键).
 [client_render]
 enabled = false
 target_fps = 60
-c1 = 1.5
+v_min = 0.7                  # 最低速度阈值 (chunks/s): 低于此值客户端不干预, 走 vanilla/Sodium 默认渲染顺序
 k = 1.0
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致
-v_ref = 1.0                  # v0.7.0
-v_boost_beta = 0.5           # v0.7.0
+direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致 (当前无读取点)
+v_boost_beta = 0.5           # v0.7.0: 当前无读取点
 frame_window = 60
 stable_threshold_ms = 2.0
 overload_factor = 1.1

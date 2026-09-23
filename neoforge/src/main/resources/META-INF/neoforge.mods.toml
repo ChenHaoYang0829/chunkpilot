@@ -25,18 +25,12 @@ side = "BOTH"
 [[dependencies.chunkpilot]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.3,1.21.4)"
+versionRange = "${mcRange}"
 ordering = "NONE"
 side = "BOTH"
 
-[[dependencies.chunkpilot]]
-modId = "architectury"
-type = "required"
-# port/1.21.3: architectury 14.0.x = 1.21.2/1.21.3 一代
-versionRange = "[14.0.0,)"
-ordering = "NONE"
-side = "BOTH"
-
+# 2026-09-24 死代码清理: 原有一条 [[dependencies.chunkpilot]] modId="architectury" type="required" —— 已删除。
+# 本模组代码零处使用 Architectury (无 @ExpectPlatform, 编译产物零引用), 那条声明只会逼玩家多装一个没用的 mod。
 [[mixins]]
 config = "chunkpilot.mixins.json"
 

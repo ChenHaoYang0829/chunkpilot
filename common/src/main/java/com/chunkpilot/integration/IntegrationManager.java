@@ -132,11 +132,6 @@ public class IntegrationManager {
         return null;
     }
 
-    public List<VehicleProvider> getProviders() { return providers; }
-    public boolean hasProviders() { return !providers.isEmpty(); }
-    public boolean isGlobalEnabled() { return globalEnabled; }
-    public void setGlobalEnabled(boolean enabled) { this.globalEnabled = enabled; }
-
     /** 用于 status 输出 */
     public String getProviderSummary() {
         if (providers.isEmpty()) return "none";

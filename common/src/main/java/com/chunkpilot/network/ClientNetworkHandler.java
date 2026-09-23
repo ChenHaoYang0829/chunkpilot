@@ -14,8 +14,6 @@ public class ClientNetworkHandler {
 
     private final ChunkPilotClient client;
     private volatile boolean serverHasCP = false;
-    private volatile String serverVersion = "";
-    private volatile int serverProtocol = 0;
 
     /** 服务端发来的最新优先级 (缓存, 供 Mixin 查询) */
     private volatile ChunkPriorityHintPacket latestHint = null;
@@ -29,8 +27,6 @@ public class ClientNetworkHandler {
      */
     public void onServerCapability(boolean hasCP, String version, int protocol) {
         this.serverHasCP = hasCP;
-        this.serverVersion = version;
-        this.serverProtocol = protocol;
         System.out.println("[ChunkPilot] Server capability: hasCP=" + hasCP +
             ", version=" + version + ", protocol=" + protocol);
     }
@@ -74,31 +70,8 @@ public class ClientNetworkHandler {
         return client.shouldPrioritizeChunk(chunkX, chunkZ);
     }
 
-    /**
-     * 获取服务端最新的玩家状态 (位置/速度/方向).
-     * 用于客户端同步显示, 如果服务端数据比本地新就用服务端的.
-     */
-    public ChunkPriorityHintPacket getLatestHint() {
-        return latestHint;
-    }
-
     /** 服务端是否有 CP */
     public boolean serverHasCP() {
         return serverHasCP;
-    }
-
-    /** 构建客户端配置覆写包 */
-    public static ClientConfigOverridePacket buildOverridePacket(ChunkPilotClient client) {
-        var sampler = client.getScheduler().getFrameSampler();
-        float avgFrameTime = sampler.hasEnoughData() ? (float) sampler.getEmaFrameTimeMs() : 0f;
-        int targetFps = client.getConfig().target_fps;
-        boolean enabled = client.isEnabled();
-
-        return new ClientConfigOverridePacket(
-            targetFps,
-            0, // meshingQueueSize: 客户端暂时无法获取, 传 0
-            avgFrameTime,
-            enabled
-        );
     }
 }

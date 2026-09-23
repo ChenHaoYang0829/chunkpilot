@@ -11,8 +11,10 @@
   "chunkpilot.error.no_net_stats": "§c该玩家没有网络统计: §e%1$s",
   "chunkpilot.error.unknown_config_sub": "§c未知的 config 子命令: §e%1$s",
   "chunkpilot.error.gen_not_initialized": "§cGenerationScheduler 尚未初始化",
+  "chunkpilot.error.need_op": "§c该子命令需要 OP 权限 (等级 %1$d), 你当前等级为 %2$d。",
+  "chunkpilot.error.diagnose_self_only": "§7(非 OP: 只显示你自己这一行; 总需求/服务端内部计数/其他玩家均已隐藏)",
   "chunkpilot.error.diagnose_failed": "§c体检失败: %1$s",
-  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  mode=§e%3$s§r  view=§e%4$d§r  mspt=§e%5$.1f§r  players=§e%6$d§r  tickets=§e%7$d§r  mixinCalls=§e%8$d§r  overrideCalls=§e%9$d§r  providers=§e%10$s§r",
+  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  mode=§e%3$s§r  view=§e%4$d§r  mspt=§e%5$.1f§r  players=§e%6$d§r",
   "chunkpilot.status.online": "§7在线玩家: §e%1$d",
   "chunkpilot.optimizer.player_debug": "§e%1$s§r  速度=§a%2$.2f§r b/t  方向=§a%3$.0f§r°  票据=§a%4$d§r  最近更新tick=§a%5$s§r\n  %6$s",
   "chunkpilot.command.probe.usage": "§c用法: /chunkpilot probe <方块X> <方块Z> (方块坐标)",
@@ -102,7 +104,7 @@
   "chunkpilot.command.lang.auto_set": "§a语言已设为自动 §7(玩家跟随客户端语言, 控制台用 en_us) [仅本次运行有效]",
   "chunkpilot.command.lang.unknown": "§c未知语言: §e%1$s§c — 可用: §e%2$s",
   "chunkpilot.command.lang.usage": "§c用法: /chunkpilot lang [auto|%1$s]",
-  "chunkpilot.probe.line": "区块=(%1$d,%2$d) 方块=(%3$d,%4$d) 已加载=%5$s 持有者=%6$s 票等级=%7$d 完成等级=%8$d 等级类型=%9$s",
+  "chunkpilot.probe.line": "区块=(%1$d,%2$d) 方块=(%3$d,%4$d) 已加载=%5$s 持有者=%6$s 票等级=%7$d 已生成到FULL=%8$s 等级类型=%9$s",
   "chunkpilot.probe.nearest": "  最近玩家区块=(%1$d,%2$d) 距离=%3$.1f 区块",
   "chunkpilot.probe.marks": "  CP已请求=%1$s CP已发票=%2$s",
   "chunkpilot.probe.view": "  [视距=%1$d]",
@@ -110,5 +112,6 @@
   "chunkpilot.probe.world_not_found": "找不到世界 %1$s",
   "chunkpilot.probe.failed": "探针失败: %1$s",
   "chunkpilot.log.c2me_detected": "[ChunkPilot] 检测到 C2ME: 为避免卸载抖动, 扇形票管理已停用 (前瞻窗口仍然生效)",
-  "chunkpilot.log.forward_failed": "[ChunkPilot] 前瞻窗口更新失败 (第 %1$d 次): %2$s"
+  "chunkpilot.log.forward_failed": "[ChunkPilot] 前瞻窗口更新失败 (第 %1$d 次): %2$s",
+  "chunkpilot.log.config_released": "[ChunkPilot] 首次运行: 已释放参考配置到 %1$s (已存在的文件永不覆盖; 修改后可用 /chunkpilot reload config 生效)"
 }

@@ -267,6 +267,10 @@ public class ChunkPilotConfig {
     public static ChunkPilotConfig load() {
         ChunkPilotConfig config = new ChunkPilotConfig();
         config.initDefaultsIfNeeded();
+        // v0.11.10: 首次运行把 jar 内的参考配置释放到 config/chunkpilot.toml
+        // (已存在则绝不覆盖; 失败只告警) —— 否则新装服务器不会有任何配置文件,
+        // jar 里那份带逐键说明的模板 (120 键, 含 [forward_window] 等整节) 也就永远看不见.
+        ConfigBootstrap.releaseIfAbsent();
         // 注意: 不再无条件清空默认档位/结构白名单. 若 toml 存在但没写对应节,
         // 默认值会保留 (否则用户写个只有 [general] 的 toml 会让整个 mod 静默失效).
         // 清空/替换动作交给 ConfigLoader: 只有真正遇到 [[speedTiers.tier]] 或
@@ -284,12 +288,8 @@ public class ChunkPilotConfig {
 
     /** 找配置文件位置：服务端 config/chunkpilot.toml 优先 */
     private static java.nio.file.Path locateConfigFile() {
-        String[] candidates = {
-            "config/chunkpilot.toml",
-            "chunkpilot.toml",
-            "../config/chunkpilot.toml"
-        };
-        for (String c : candidates) {
+        // 候选路径由 ConfigBootstrap.CANDIDATES 统一提供 (释放逻辑用同一份列表, 避免两处漂移)
+        for (String c : ConfigBootstrap.CANDIDATES) {
             java.nio.file.Path p = java.nio.file.Paths.get(c);
             if (java.nio.file.Files.exists(p)) return p;
         }

@@ -24,11 +24,6 @@ public class FabricPlatform implements PlatformAbstraction {
     // 玩家 UUID → ServerPlayer 缓存
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // isChunkLoaded 反射方法缓存 — 每 tick 对每个候选 chunk 调用, 必须缓存
-    // findMethod 的类层次遍历, 否则成为巨大 CPU 热点.
-    private static java.lang.reflect.Method cachedHasChunk = null;
-    private static Class<?> cachedHasChunkClass = null;
-    
     // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
     public static final TicketType<ChunkPos> CHUNKPILOT_TICKET = 
         TicketType.create("chunkpilot:forced", java.util.Comparator.comparingLong(ChunkPos::toLong), 31);
@@ -80,11 +75,6 @@ public class FabricPlatform implements PlatformAbstraction {
         requestedChunks.clear();
     }
 
-    /** 当前 CP 请求集合大小 (给 /chunkpilot gen stats 用). */
-    public static int getRequestedChunksSize() {
-        return requestedChunks.size();
-    }
-
     // ========== v0.10.4: 持久 CP ticket 集合 ==========
     //
     // 背景: exclusiveGenerationNoC2me mixin 会取消"不在 requestedChunks 里"的生成任务.
@@ -112,11 +102,6 @@ public class FabricPlatform implements PlatformAbstraction {
     /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
     public static boolean isChunkTicketedByCp(long chunkPosLong) {
         return ticketedChunks.contains(chunkPosLong);
-    }
-
-    /** 当前活跃 CP ticket 集合大小 (给 /chunkpilot gen stats 用). */
-    public static int getTicketedChunksSize() {
-        return ticketedChunks.size();
     }
 
     /**
@@ -258,32 +243,19 @@ public class FabricPlatform implements PlatformAbstraction {
             ServerLevel world = findWorld(server, worldId);
             if (world == null) return false;
             long posLong = ChunkPos.asLong(chunkX, chunkZ);
-            Object holder = null;
-            for (java.lang.reflect.Method m : world.getChunkSource().getClass().getMethods()) {
-                if (m.getName().equals("getChunkHolder") && m.getParameterCount() == 1
-                        && m.getParameterTypes()[0] == long.class) {
-                    holder = m.invoke(world.getChunkSource(), posLong);
-                    break;
-                }
-            }
+            // v0.11.9 修复: 原来用反射找 getChunkHolder/getFullChunkFuture —— 前者非 public,
+            //   反射恒失败 ⇒ isChunkReadyFull **恒返回 false** (即"永远没生成完")。
+            //   现在用 mixin accessor 拿 ChunkHolder, 再直接读 fullChunkFuture (全程非阻塞)。
+            net.minecraft.server.level.ChunkHolder holder =
+                ((com.chunkpilot.fabric.mixin.ServerChunkCacheAccessor) world.getChunkSource())
+                    .chunkpilot$getVisibleChunkIfPresent(posLong);
             if (holder == null) return false;
-            for (java.lang.reflect.Method m : holder.getClass().getMethods()) {
-                if (m.getName().equals("getFullChunkFuture") && m.getParameterCount() == 0) {
-                    Object fut = m.invoke(holder);
-                    if (fut instanceof java.util.concurrent.CompletableFuture<?> cf) {
-                        if (!cf.isDone()) return false;
-                        Object res = cf.getNow(null);
-                        if (res == null) return false;
-                        for (java.lang.reflect.Method rm : res.getClass().getMethods()) {
-                            if (rm.getName().equals("isSuccess") && rm.getParameterCount() == 0) {
-                                return Boolean.TRUE.equals(rm.invoke(res));
-                            }
-                        }
-                    }
-                    return false;
-                }
-            }
-            return false;
+            java.util.concurrent.CompletableFuture<net.minecraft.server.level.ChunkResult<
+                net.minecraft.world.level.chunk.LevelChunk>> fut = holder.getFullChunkFuture();
+            if (!fut.isDone()) return false;
+            net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.LevelChunk> res =
+                fut.getNow(null);
+            return res != null && res.isSuccess() && res.orElse(null) != null;
         } catch (Throwable t) {
             return false;
         }
@@ -406,28 +378,23 @@ public class FabricPlatform implements PlatformAbstraction {
             long posLong = ChunkPos.asLong(chunkX, chunkZ);
             boolean loaded = isChunkLoaded(worldId, chunkX, chunkZ);
             int ticketLevel = -1;
-            int completedLevel = -1;
             boolean holderPresent = false;
             String statusName = "?";
             try {
-                Object source = level.getChunkSource();
-                Object holder = null;
-                for (java.lang.reflect.Method m : source.getClass().getMethods()) {
-                    if (m.getName().equals("getChunkHolder") && m.getParameterCount() == 1
-                            && m.getParameterTypes()[0] == long.class) {
-                        holder = m.invoke(source, posLong);
-                        break;
-                    }
-                }
+                // v0.11.9 修复: 原实现用反射找 ServerChunkCache.getChunkHolder(long) —— 该方法在
+                //   1.21.1 与 1.21.3 **都不是 public**, getMethods() 永远找不到 ⇒ holder 恒为 null
+                //   ⇒ probe 的 ticketLevel/completedLevel 恒为 -1。改用已实证注入成功的 mixin
+                //   accessor (@Invoker 包 private getVisibleChunkIfPresent), 全程非阻塞。
+                var source = (com.chunkpilot.fabric.mixin.ServerChunkCacheAccessor) level.getChunkSource();
+                net.minecraft.server.level.ChunkHolder holder =
+                    source.chunkpilot$getVisibleChunkIfPresent(posLong);
                 if (holder != null) {
                     holderPresent = true;
-                    for (java.lang.reflect.Method m : holder.getClass().getMethods()) {
-                        if (m.getName().equals("getTicketLevel") && m.getParameterCount() == 0) {
-                            ticketLevel = (Integer) m.invoke(holder);
-                        } else if (m.getName().equals("getCompletedLevel") && m.getParameterCount() == 0) {
-                            completedLevel = (Integer) m.invoke(holder);
-                        }
-                    }
+                    // v0.11.9 修复: 这里原先也用可读名反射调 getTicketLevel() —— **运行期 MC 是
+                    //   intermediary 命名** (getTicketLevel → method_12279), 可读名反射必然失败,
+                    //   所以 probe 一直显示 ticketLevel=-1。改成**直接方法调用** (编译期 official 名,
+                    //   loom 在打包时自动 remap 成运行期名)。
+                    ticketLevel = holder.getTicketLevel();
                     statusName = ChunkLevelTypeName(ticketLevel);
                 }
             } catch (Throwable ignored) {
@@ -446,9 +413,12 @@ public class FabricPlatform implements PlatformAbstraction {
                 }
             }
 
+            // completedLevel 在 1.21.3 已不存在 (getCompletedLevel 被移除), 恒为 -1 只会误导;
+            // 换成真正有意义的"是否已生成到 FULL"(与生成调度器同口径, 非阻塞)。
+            boolean fullReady = isChunkReadyFull(worldId, chunkX, chunkZ);
             sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.line",
                 chunkX, chunkZ, chunkX << 4, chunkZ << 4, loaded, holderPresent,
-                ticketLevel, completedLevel, statusName));
+                ticketLevel, fullReady, statusName));
             if (best >= 0) {
                 sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.nearest",
                     pcx, pcz, best));
@@ -533,34 +503,6 @@ public class FabricPlatform implements PlatformAbstraction {
         }
     }
 
-    /** 缓存并返回 chunk 已加载检查方法 (hasChunk 优先, 回退 isChunkLoaded). */
-    private static java.lang.reflect.Method resolveHasChunk(Class<?> cls) {
-        if (cachedHasChunk != null && cachedHasChunkClass == cls) return cachedHasChunk;
-        java.lang.reflect.Method m = findMethod(cls, "hasChunk", int.class, int.class);
-        if (m == null) m = findMethod(cls, "isChunkLoaded", int.class, int.class);
-        if (m != null) m.setAccessible(true);
-        cachedHasChunk = m;
-        cachedHasChunkClass = cls;
-        return m;
-    }
-
-    private static java.lang.reflect.Method findMethod(Class<?> clazz, String name, Class<?>... paramTypes) {
-        try {
-            return clazz.getDeclaredMethod(name, paramTypes);
-        } catch (NoSuchMethodException e) {
-            // 遍历父类
-            Class<?> sup = clazz.getSuperclass();
-            while (sup != null) {
-                try {
-                    return sup.getDeclaredMethod(name, paramTypes);
-                } catch (NoSuchMethodException e2) {
-                    sup = sup.getSuperclass();
-                }
-            }
-            return null;
-        }
-    }
-    
     @Override
     public int getPlayerWorldId(UUID playerId) {
         ServerPlayer player = PLAYER_CACHE.get(playerId);

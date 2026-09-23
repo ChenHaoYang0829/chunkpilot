@@ -133,14 +133,6 @@ public class ChunkRenderScheduler {
         frameSampler.recordFrame(frameNanos);
     }
 
-    public FrameTimeSampler getFrameSampler() {
-        return frameSampler;
-    }
-
-    public RenderBudgetCalculator getBudgetCalculator() {
-        return budgetCalculator;
-    }
-
     public void reset() {
         frameSampler.reset();
         budgetCalculator.reset();

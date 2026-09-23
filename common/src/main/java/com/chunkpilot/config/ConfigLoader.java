@@ -46,8 +46,6 @@ public class ConfigLoader {
                 multiLineBuf.append(line);
                 if (line.contains("]")) {
                     String fullValue = multiLineBuf.toString();
-                    // 提取出上一行的 key
-                    String prevRaw = multiLineBuf.toString();
                     // 需要从原始上下文取 key：但简单起见，我们把 key 在 multiLineBuf 外记录
                     // 这里重新设计：使用一个专用变量存储 multiLine key
                     // 简单做法：重新收集 — 补一个独立字段
@@ -335,17 +333,9 @@ public class ConfigLoader {
                     }
                 }
             }
-            // [[speedTiers.tier]] 数组表
-            if ("speedTiers".equals(arrSection) && "tier".equals(key)) {
-                // 单值版本（不常用），忽略
-            }
         } catch (Exception e) {
             System.err.println("[ChunkPilot] Failed to parse [" + section + "] " + key + " = " + value + ": " + e.getMessage());
         }
-    }
-
-    private static void applyToArrayTable(ChunkPilotConfig cfg, String arrSection, String firstLine) {
-        // 简单实现：仅在调用前先放好默认值，由 applyKeyValue 后续填充
     }
 
     private static void applyIntegration(ChunkPilotConfig cfg, String name, String key, String value) {

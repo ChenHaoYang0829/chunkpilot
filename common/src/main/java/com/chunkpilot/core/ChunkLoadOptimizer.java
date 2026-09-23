@@ -35,8 +35,6 @@ public class ChunkLoadOptimizer {
     private ChunkPilotConfig config;
     private final PlatformAbstraction platform;
     private final SpeedTracker speedTracker;
-    private final SectorCalculator sectorCalculator = new SectorCalculator();
-    private final TicketManager ticketManager;
     private final IntegrationManager integrationManager;
 
     private boolean enabled = true;
@@ -96,14 +94,11 @@ public class ChunkLoadOptimizer {
     // v0.11.6: 前瞻窗口 (生成侧锚点票 + 发送侧跟踪窗口前移). 两种环境 (含 C2ME) 都生效.
     private final ForwardWindowController forwardWindow = new ForwardWindowController();
 
-    private long totalMixinCalls = 0;
-    private long totalOverrideCalls = 0;
 
     public ChunkLoadOptimizer(ChunkPilotConfig config, PlatformAbstraction platform) {
         this.config = config;
         this.platform = platform;
         this.speedTracker = new SpeedTracker(config.speedWindowTicks, config.speedRecentTicks);
-        this.ticketManager = new TicketManager(config);
         this.integrationManager = new IntegrationManager();
     }
 
@@ -111,9 +106,6 @@ public class ChunkLoadOptimizer {
         this.config = newConfig;
         // 暂不重建 speedTracker（避免丢历史样本），新窗口大小在下次创建新玩家时生效
         // 服主如需应用新窗口，使用 /chunkpilot reload config 之前重启服务端
-        if (ticketManager != null) {
-            // 保留原 TicketManager
-        }
     }
 
     /**
@@ -124,7 +116,6 @@ public class ChunkLoadOptimizer {
      * @param blockZ 玩家方块 Z
      */
     public void onPlayerChunkUpdate(UUID playerId, int worldId, double blockX, double blockZ) {
-        totalMixinCalls++;
         if (!enabled || !config.enabled) {
             forwardWindow.deactivate(playerId, platform);
             return;
@@ -300,18 +291,6 @@ public class ChunkLoadOptimizer {
         stickyStates.put(playerId, new StickyState(playerChunkX, playerChunkZ, direction, speed, currentTick));
     }
 
-    /** Mixin 兼容旧 API（用 chunk 坐标当 block 坐标） */
-    public void onPlayerChunkUpdate(UUID playerId, int worldId) {
-        int[] chunkPos = platform.getPlayerChunkPos(playerId);
-        if (chunkPos == null) {
-            onPlayerChunkUpdate(playerId, worldId, 0, 0);
-            return;
-        }
-        double blockX = chunkPos[0] * 16.0 + 8;
-        double blockZ = chunkPos[1] * 16.0 + 8;
-        onPlayerChunkUpdate(playerId, worldId, blockX, blockZ);
-    }
-
     private Set<SectorCalculator.ChunkPos> computeFromProvider(
             Object player, VehicleProvider provider, double blockX, double blockZ) {
         try {
@@ -481,7 +460,6 @@ public class ChunkLoadOptimizer {
                 platform.removeChunkTicket(worldId, cx, cz, previous.get(l));
             }
             playerActiveTickets.put(playerId, new PlayerTickets(worldId, finalActive));
-            totalOverrideCalls++;
         }
 
         // P1: 记录粘滞状态 (任何一次都记, 以便下次对比)
@@ -614,9 +592,6 @@ public class ChunkLoadOptimizer {
         return playerActiveTickets.size();
     }
 
-    public long getTotalMixinCalls() { return totalMixinCalls; }
-    public long getTotalOverrideCalls() { return totalOverrideCalls; }
-
     /** 推进 tick 计数（由 mixin 入口处或平台 tick 事件调用） */
     /** v0.11.4: 票标记重建周期 (5s) */
     private static final int MARK_REBUILD_INTERVAL = 100;
@@ -657,12 +632,12 @@ public class ChunkLoadOptimizer {
      * @param viewerId 命令执行者 (玩家 → 用其客户端语言; null/控制台 → 全局语言)
      */
     public String getStatusText(java.util.UUID viewerId) {
-        int totalTickets = playerActiveTickets.values().stream().mapToInt(v -> v.tickets().size()).sum();
+        // v0.11.9: 本命令 0 级可用 ⇒ 不再输出任何服务端内部计数
+        //   (原来会输出 CP 票数 / mixin 调用数 / override 调用数 / 模组联动列表)
         return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.optimizer.status",
             com.chunkpilot.ChunkPilot.VERSION,
             config.enabled, config.mode, platform.getServerRenderDistance(),
-            platform.getCurrentMspt(), getActivePlayerCount(), totalTickets,
-            totalMixinCalls, totalOverrideCalls, integrationManager.getProviderSummary());
+            platform.getCurrentMspt(), getActivePlayerCount());
     }
 
     /** 玩家级调试信息 (输出语言跟随该玩家自己的客户端语言) */
@@ -692,10 +667,6 @@ public class ChunkLoadOptimizer {
         }
     }
 
-    public boolean shouldOverride(double speed) {
-        return enabled && config.enabled && speed > config.lowSpeedThreshold;
-    }
-
     public Set<SectorCalculator.ChunkPos> computePlayerChunks(
             int chunkX, int chunkZ, double speed, double direction) {
         int renderDistance = platform.getServerRenderDistance();
@@ -711,9 +682,5 @@ public class ChunkLoadOptimizer {
     public SpeedTracker getSpeedTracker() { return speedTracker; }
     /** v0.11.6: 前瞻窗口控制器 (Mixin / 命令 / 诊断读取). */
     public ForwardWindowController getForwardWindow() { return forwardWindow; }
-    public TicketManager getTicketManager() { return ticketManager; }
     public IntegrationManager getIntegrationManager() { return integrationManager; }
-
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    public boolean isEnabled() { return enabled; }
 }

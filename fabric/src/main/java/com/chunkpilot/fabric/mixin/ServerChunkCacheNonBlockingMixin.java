@@ -117,7 +117,6 @@ public abstract class ServerChunkCacheNonBlockingMixin {
         }
     }
 
-    private static final java.util.concurrent.atomic.AtomicLong cpLogged = new java.util.concurrent.atomic.AtomicLong();
     private static volatile long cpLastLogSecond = 0L;
 
     /** 诊断: 把"是谁在阻塞读区块"打出来 (每 5 秒最多一次). */
