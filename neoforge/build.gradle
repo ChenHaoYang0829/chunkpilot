@@ -127,3 +127,18 @@ tasks.register('fixRefmap') {
 afterEvaluate {
     tasks.named('jar').configure { finalizedBy('fixRefmap') }
 }
+// 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
+//   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
+//   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的 1.21.x 上也"允许加载",
+//      然后以 mixin 目标缺失的形式崩在启动期, 比明确拒绝更难排查。
+def _mc = project.property('minecraftVersion').toString()
+def _mcParts = _mc.tokenize('.')
+def _mcNext = (_mcParts[0..-2] + [(_mcParts[-1] as int) + 1]).join('.')
+def mcRange = "[${_mc},${_mcNext})"
+
+processResources {
+    inputs.property "mcRange", mcRange
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand(mcRange: mcRange)
+    }
+}
