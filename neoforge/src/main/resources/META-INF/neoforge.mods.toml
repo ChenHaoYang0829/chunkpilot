@@ -5,7 +5,7 @@ issueTrackerURL = ""
 
 [[mods]]
 modId = "chunkpilot"
-version = "0.5.0-alpha"
+version = "${modVersion}"   # 1.21.11: 原先写死 "0.5.0-alpha" (与 rootProject.modVersion 差 5 个版本), 改为构建期展开
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''

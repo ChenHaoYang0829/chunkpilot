@@ -138,7 +138,11 @@ def mcRange = "[${_mc},${_mcNext})"
 
 processResources {
     inputs.property "mcRange", mcRange
+    // 1.21.11 (port/1.21.11): toml 里的 mod version 原先**写死** "0.5.0-alpha",
+    //   与 rootProject.modVersion (0.10.10-alpha) 差 5 个版本 —— 实测启动日志里
+    //   Mod List 显示 `ChunkPilot | chunkpilot | 0.5.0-alpha |`。一并改成构建期展开。
+    inputs.property "modVersion", project.version
     filesMatching("META-INF/neoforge.mods.toml") {
-        expand(mcRange: mcRange)
+        expand(mcRange: mcRange, modVersion: project.version)
     }
 }
