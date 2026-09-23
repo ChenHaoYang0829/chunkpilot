@@ -71,16 +71,6 @@ public class SpeedTracker {
         if (buf != null) buf.clear();
     }
 
-    /** 清空所有玩家窗口 (维度切换等场景). */
-    public void resetAll() {
-        for (RingBuffer b : buffers.values()) b.clear();
-    }
-
-    /** 兼容旧 API（用 chunkX/Z 当方块坐标） */
-    public void update(UUID playerId, int chunkX, int chunkZ) {
-        update(playerId, (double) chunkX, (double) chunkZ, 0L);
-    }
-
     /**
      * 当前平均速度 (blocks/tick)
      * 公式：v_weighted = 0.5 * v_recent + 0.5 * v_window
@@ -124,10 +114,6 @@ public class SpeedTracker {
         return Math.atan2(dz, dx);
     }
 
-    public boolean isFastMoving(UUID playerId, double threshold) {
-        return getSpeed(playerId) > threshold;
-    }
-
     /**
      * 是否存在任一在线玩家速度 >= 给定阈值 (chunks/s).
      * 用于 exclusive-generation 判断"是否该由 CP 接管生成".
@@ -159,9 +145,6 @@ public class SpeedTracker {
     public void removePlayer(UUID playerId) {
         buffers.remove(playerId);
     }
-
-    public int getWindowTicks() { return windowTicks; }
-    public int getRecentTicks() { return recentTicks; }
 
     /** 用于 /chunkpilot debug 输出 */
     public String getDebugInfo(UUID playerId) {

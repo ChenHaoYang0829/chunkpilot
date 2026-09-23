@@ -6,7 +6,6 @@ import com.chunkpilot.platform.PlatformAbstraction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -247,9 +246,6 @@ public class ForwardWindowController {
         return n;
     }
 
-    /** 当前活跃的跟踪窗口偏移数量. */
-    public int activeShifts() { return shifts.size(); }
-
     public AnchorInfo info(UUID playerId) {
         WinState s = states.get(playerId);
         int[] sh = shifts.get(playerId);
@@ -270,17 +266,5 @@ public class ForwardWindowController {
     public String statsText(java.util.UUID viewerId) {
         return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.forward.stats",
             activeAnchors(), shifts.size(), activations, moves, refreshes, deactivations, errors);
-    }
-
-    public long getActivations() { return activations; }
-    public long getMoves() { return moves; }
-    public long getErrors() { return errors; }
-
-    /** 服务器停止 / 全量清理. */
-    public void clearAll(PlatformAbstraction platform) {
-        for (UUID id : new ArrayList<>(states.keySet())) {
-            deactivate(id, platform);
-        }
-        shifts.clear();
     }
 }

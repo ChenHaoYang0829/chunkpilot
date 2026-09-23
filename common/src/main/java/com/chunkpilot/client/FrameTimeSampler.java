@@ -27,9 +27,6 @@ public class FrameTimeSampler {
     /** 排序后的副本, 用于 P99 计算 (每次 getP99 时排序) */
     private final long[] sortedCopy;
 
-    /** 上一帧时间戳 (纳秒) */
-    private long lastFrameNanos = -1;
-
     public FrameTimeSampler(int windowSize) {
         this.windowSize = Math.max(10, windowSize);
         this.frameTimes = new long[this.windowSize];
@@ -60,20 +57,9 @@ public class FrameTimeSampler {
         recordFrame(frameNanos, (long) (frameNanos * 0.7));
     }
 
-    /** EMA 平均帧时间 (纳秒) */
-    public double getEmaFrameTimeNanos() {
-        return emaFrameTime;
-    }
-
     /** EMA 平均帧时间 (毫秒) */
     public double getEmaFrameTimeMs() {
         return emaFrameTime / 1_000_000.0;
-    }
-
-    /** EMA 平均 FPS */
-    public double getEmaFps() {
-        if (emaFrameTime <= 0) return 0;
-        return 1_000_000_000.0 / emaFrameTime;
     }
 
     /**
@@ -104,11 +90,6 @@ public class FrameTimeSampler {
         return sortedCopy[p99Index];
     }
 
-    /** P99 帧时间 (毫秒) */
-    public double getP99FrameTimeMs() {
-        return getP99FrameTimeNanos() / 1_000_000.0;
-    }
-
     /**
      * 是否处于抖动状态: P99 远超 EMA (×1.5 以上).
      * 抖动时应该用保守预算.
@@ -129,11 +110,5 @@ public class FrameTimeSampler {
         head = 0;
         size = 0;
         emaFrameTime = -1;
-        lastFrameNanos = -1;
-    }
-
-    /** 样本数 */
-    public int size() {
-        return size;
     }
 }

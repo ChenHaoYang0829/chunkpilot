@@ -681,11 +681,6 @@ public class GenerationScheduler {
         return e;
     }
 
-    /** 测试专用: 检查 index 是否包含某 chunkPos */
-    public boolean indexContains(long chunkPos) {
-        return index.containsKey(chunkPos);
-    }
-
     // ========== ChunkPos 编码 (v0.3.0 自用, 不与 Mojang 互通) ==========
 
     public static long packChunkPos(int x, int z) {

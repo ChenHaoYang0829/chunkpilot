@@ -328,17 +328,9 @@ public class ConfigLoader {
                     }
                 }
             }
-            // [[speedTiers.tier]] 数组表
-            if ("speedTiers".equals(arrSection) && "tier".equals(key)) {
-                // 单值版本（不常用），忽略
-            }
         } catch (Exception e) {
             System.err.println("[ChunkPilot] Failed to parse [" + section + "] " + key + " = " + value + ": " + e.getMessage());
         }
-    }
-
-    private static void applyToArrayTable(ChunkPilotConfig cfg, String arrSection, String firstLine) {
-        // 简单实现：仅在调用前先放好默认值，由 applyKeyValue 后续填充
     }
 
     private static void applyIntegration(ChunkPilotConfig cfg, String name, String key, String value) {

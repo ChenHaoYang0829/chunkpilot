@@ -103,7 +103,6 @@
   "chunkpilot.command.lang.set": "§alanguage switched to §e%1$s§a (%2$s§a) §7[runtime only; edit [general] language to persist]",
   "chunkpilot.command.lang.auto_set": "§alanguage set to auto §7(players follow their client language; console uses en_us) [runtime only]",
   "chunkpilot.command.lang.unknown": "§cUnknown language: §e%1$s§c — available: §e%2$s",
-  "chunkpilot.command.lang.usage": "§cUsage: /chunkpilot lang [auto|%1$s]",
   "chunkpilot.probe.line": "chunk=(%1$d,%2$d) block=(%3$d,%4$d) loaded=%5$s holder=%6$s ticketLevel=%7$d completedLevel=%8$d levelType=%9$s",
   "chunkpilot.probe.nearest": "  nearestPlayerChunk=(%1$d,%2$d) dist=%3$.1f ch",
   "chunkpilot.probe.marks": "  cpRequested=%1$s cpTicketed=%2$s",

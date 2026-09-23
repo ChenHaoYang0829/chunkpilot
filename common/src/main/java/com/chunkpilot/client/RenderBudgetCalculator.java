@@ -67,11 +67,6 @@ public class RenderBudgetCalculator {
         return currentBudget;
     }
 
-    /** 当前预算 (不更新) */
-    public int getCurrentBudget() {
-        return currentBudget;
-    }
-
     /** 重置 (维度切换/传送后) */
     public void reset() {
         currentBudget = CONSERVATIVE_INITIAL;
