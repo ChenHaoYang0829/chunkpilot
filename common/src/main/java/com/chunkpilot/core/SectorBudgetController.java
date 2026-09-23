@@ -83,13 +83,6 @@ public final class SectorBudgetController {
         return Math.min(b, maxBudget);
     }
 
-    /**
-     * 强制重置 (测试用)
-     */
-    public void reset() {
-        currentBudget.set(80);
-    }
-
     // ===== P3 持久化 =====
 
     private void maybePersist(int newBudget, int oldBudget, long now) {

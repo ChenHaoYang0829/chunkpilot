@@ -1,7 +1,6 @@
 # ===== 构建产物 =====
 build/
 .gradle/
-.local-maven-repo/
 gradle-*.zip
 *.class
 *.jar
@@ -55,3 +54,11 @@ common/logs/
 bench_client/windows_agent/shots_*/
 bench_client/windows_agent/test_v090/
 *.bak.*
+
+# 注意: .local-maven-repo/ 是 :neoforge:* 构建的**必需**本地仓库 ——
+#   neoforge/build.gradle 依赖它提供 cpw.mods:modlauncher 11.0.4 / securejarhandler 3.0.8
+#   （fancymodloader 要求 11.0.3，公开 maven 上没有；实测 maven.minecraftforge.net 也没有 11.0.4）。
+# 它没有纳入版本控制（280K 的第三方 jar），因此**每个 worktree / 新 clone 都要自行提供**：
+#   bash scripts/setup_local_maven_repo.sh          # 软链或复制到当前仓库根
+# 或者直接用一份现成的: /data/cp-port/artifacts/_tools/local-maven-repo/
+.local-maven-repo

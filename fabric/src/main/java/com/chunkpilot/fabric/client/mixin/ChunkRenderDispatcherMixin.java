@@ -12,7 +12,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 当 Sodium 不存在时, 拦截 ChunkRenderDispatcher.updateView,
  * 用 CP 权重重新排序待 meshing 的区块队列.
  *
- * 使用字符串目标避免编译时需要客户端类 (Architectury Loom main sourceSet 不含客户端 mappings).
+ * 用字符串 targets 而不是 {@code @Mixin(ChunkRenderDispatcher.class)}:
+ * 这样无需 import 客户端类, 在缺少客户端类 / 客户端 mappings 的编译环境下同样能通过.
+>
+ (Architectury Loom main sourceSet 不含客户端 mappings).
 
  * ============================ port/1.21.5: 已停用 (不注册进 mixins.json) ============================
  * 1.21.5 把 `net.minecraft.client.renderer.chunk.ChunkRenderDispatcher` 改名成了

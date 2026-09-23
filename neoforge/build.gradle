@@ -15,13 +15,10 @@ configurations.all {
     }
 }
 
-architectury {
-    platformSetupLoomIde()
-    neoForge {
-        platformPackage = "forge"
-    }
-}
-
+// 2026-09-24 死代码清理: 这里原有 architectury { platformSetupLoomIde(); neoForge { platformPackage = "forge" } }。
+//   `platformPackage` 只服务 Architectury 的 @ExpectPlatform 代码生成, 而本项目**零处使用** @ExpectPlatform
+//   (平台实现是各模块直接 implements + 入口显式构造注入); `platformSetupLoomIde()` 只影响 IDE/run-config。
+//   实测移除后 :common:test / :neoforge:build 均通过。
 dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
@@ -31,13 +28,16 @@ dependencies {
     implementation "net.neoforged.fancymodloader:earlydisplay:7.0.13"
     implementation "net.neoforged:bus:8.0.5"
 
-    // Architectury
-    modImplementation "dev.architectury:architectury-neoforge:${rootProject.architecturyVersion}"
+    // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
+    //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
+    //   type="required" 的依赖**, 也就是说玩家被强制安装一个本模组完全用不到的 Architectury API ——
+    //   那条声明也已一并删除(见 META-INF/neoforge.mods.toml)。
 
-    // Mixin 注解 (neoforge 21.5.98 自带 mixinextras 0.5.3)
-    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.5.3"
-    implementation "io.github.llamalad7:mixinextras-neoforge:0.5.3"
-
+    // Mixin 注解
+    // 2026-09-24 死代码盘点: mixinextras **完全未使用** (全仓库 0 处 WrapOperation/
+    //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
+    //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
+>
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径; 21.5.98 = 0.15.2+mixin.0.8.7）
     implementation "net.fabricmc:sponge-mixin:0.15.2+mixin.0.8.7"
 
@@ -127,4 +127,19 @@ tasks.register('fixRefmap') {
 // 让 jar 任务依赖 fixRefmap, 确保 build 后 refmap 是 Mojang 命名
 afterEvaluate {
     tasks.named('jar').configure { finalizedBy('fixRefmap') }
+}
+// 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
+//   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
+//   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的 1.21.x 上也"允许加载",
+//      然后以 mixin 目标缺失的形式崩在启动期, 比明确拒绝更难排查。
+def _mc = project.property('minecraftVersion').toString()
+def _mcParts = _mc.tokenize('.')
+def _mcNext = (_mcParts[0..-2] + [(_mcParts[-1] as int) + 1]).join('.')
+def mcRange = "[${_mc},${_mcNext})"
+
+processResources {
+    inputs.property "mcRange", mcRange
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand(mcRange: mcRange)
+    }
 }

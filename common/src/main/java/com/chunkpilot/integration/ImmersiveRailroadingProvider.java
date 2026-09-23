@@ -25,16 +25,14 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
 
     private boolean loaded = false;
     private Class<?> rollingStockClass = null;
-    private Method getTrainMethod = null;
-    private Method getTrackMethod = null;
     private Method getPositionMethod = null;
 
-    // Track API
-    private Class<?> trackClass = null;
-    private Method trackGetNextMethod = null;
-
+    /** 缓存周期默认值 —— 与 ChunkPilotConfig.Integration.cacheTicks 的默认值一致. */
+    private static final int DEFAULT_CACHE_TICKS = 10;
+    private int pathCacheTicks = DEFAULT_CACHE_TICKS;
     private ChunkPilotConfig.Integration config = new ChunkPilotConfig.Integration();
-    private final VehicleProvider.Cache<List<ChunkPos>> pathCache = new VehicleProvider.Cache<>(10);
+    // 非 final: updateConfig() 时按 [integration.<mod>] cacheTicks 重建 (默认 10 = 原硬编码值)
+    private VehicleProvider.Cache<List<ChunkPos>> pathCache = new VehicleProvider.Cache<>(DEFAULT_CACHE_TICKS);
 
     public boolean isAvailable() { return loaded; }
 
@@ -56,19 +54,6 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
                 }
             } catch (ClassNotFoundException ignored) {}
         }
-
-        // 2. 找 Track API
-        if (loaded) {
-            try {
-                Class<?> tc = Class.forName("cam72cam.modtrack.objects.Track");
-                this.trackClass = tc;
-                this.trackGetNextMethod = findMethod(tc, "next");
-            } catch (ClassNotFoundException ignored) {
-                try {
-                    Class<?> tc = Class.forName("trackapi.lib.Gauge");
-                } catch (ClassNotFoundException ignored2) {}
-            }
-        }
     }
 
     private static Method findMethod(Class<?> c, String name) {
@@ -81,6 +66,13 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
 
     public void updateConfig(ChunkPilotConfig.Integration cfg) {
         this.config = cfg;
+        // v0.11.10: 让 [integration...] cacheTicks 真正生效 (此前该键被解析但无人使用,
+        // 缓存周期一直硬编码 10). 默认值就是 10, 因此默认行为不变; 改配置才会变.
+        int ticks = Math.max(1, cfg.cacheTicks);
+        if (ticks != this.pathCacheTicks) {
+            this.pathCacheTicks = ticks;
+            this.pathCache = new VehicleProvider.Cache<>(ticks);
+        }
     }
 
     @Override
@@ -114,8 +106,6 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
             Object pos = getPositionMethod.invoke(vehicle);
             int px = (int) pos.getClass().getMethod("getX").invoke(pos);
             int pz = (int) pos.getClass().getMethod("getZ").invoke(pos);
-            int chunkX = (int) Math.floor(px / 16.0);
-            int chunkZ = (int) Math.floor(pz / 16.0);
 
             // 读车辆 yaw → 方向
             float yaw = 0;
