@@ -35,8 +35,6 @@ public class ChunkLoadOptimizer {
     private ChunkPilotConfig config;
     private final PlatformAbstraction platform;
     private final SpeedTracker speedTracker;
-    private final SectorCalculator sectorCalculator = new SectorCalculator();
-    private final TicketManager ticketManager;
     private final IntegrationManager integrationManager;
 
     private boolean enabled = true;
@@ -103,7 +101,6 @@ public class ChunkLoadOptimizer {
         this.config = config;
         this.platform = platform;
         this.speedTracker = new SpeedTracker(config.speedWindowTicks, config.speedRecentTicks);
-        this.ticketManager = new TicketManager(config);
         this.integrationManager = new IntegrationManager();
     }
 
@@ -111,9 +108,6 @@ public class ChunkLoadOptimizer {
         this.config = newConfig;
         // 暂不重建 speedTracker（避免丢历史样本），新窗口大小在下次创建新玩家时生效
         // 服主如需应用新窗口，使用 /chunkpilot reload config 之前重启服务端
-        if (ticketManager != null) {
-            // 保留原 TicketManager
-        }
     }
 
     /**
@@ -298,18 +292,6 @@ public class ChunkLoadOptimizer {
         double direction = speedTracker.getDirection(playerId);
         double speed = speedTracker.getSpeed(playerId);
         stickyStates.put(playerId, new StickyState(playerChunkX, playerChunkZ, direction, speed, currentTick));
-    }
-
-    /** Mixin 兼容旧 API（用 chunk 坐标当 block 坐标） */
-    public void onPlayerChunkUpdate(UUID playerId, int worldId) {
-        int[] chunkPos = platform.getPlayerChunkPos(playerId);
-        if (chunkPos == null) {
-            onPlayerChunkUpdate(playerId, worldId, 0, 0);
-            return;
-        }
-        double blockX = chunkPos[0] * 16.0 + 8;
-        double blockZ = chunkPos[1] * 16.0 + 8;
-        onPlayerChunkUpdate(playerId, worldId, blockX, blockZ);
     }
 
     private Set<SectorCalculator.ChunkPos> computeFromProvider(
@@ -614,9 +596,6 @@ public class ChunkLoadOptimizer {
         return playerActiveTickets.size();
     }
 
-    public long getTotalMixinCalls() { return totalMixinCalls; }
-    public long getTotalOverrideCalls() { return totalOverrideCalls; }
-
     /** 推进 tick 计数（由 mixin 入口处或平台 tick 事件调用） */
     /** v0.11.4: 票标记重建周期 (5s) */
     private static final int MARK_REBUILD_INTERVAL = 100;
@@ -692,10 +671,6 @@ public class ChunkLoadOptimizer {
         }
     }
 
-    public boolean shouldOverride(double speed) {
-        return enabled && config.enabled && speed > config.lowSpeedThreshold;
-    }
-
     public Set<SectorCalculator.ChunkPos> computePlayerChunks(
             int chunkX, int chunkZ, double speed, double direction) {
         int renderDistance = platform.getServerRenderDistance();
@@ -711,9 +686,5 @@ public class ChunkLoadOptimizer {
     public SpeedTracker getSpeedTracker() { return speedTracker; }
     /** v0.11.6: 前瞻窗口控制器 (Mixin / 命令 / 诊断读取). */
     public ForwardWindowController getForwardWindow() { return forwardWindow; }
-    public TicketManager getTicketManager() { return ticketManager; }
     public IntegrationManager getIntegrationManager() { return integrationManager; }
-
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    public boolean isEnabled() { return enabled; }
 }

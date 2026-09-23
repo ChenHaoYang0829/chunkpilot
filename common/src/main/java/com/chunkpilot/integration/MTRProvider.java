@@ -33,7 +33,6 @@ public class MTRProvider implements VehicleProvider, IntegrationManager.Provider
     private Method getPathMethod = null;
     private Method getXMethod = null;
     private Method getZMethod = null;
-    private Method getYMethod = null;
     private Method vehicleGetXMethod = null;
     private Method vehicleGetZMethod = null;
 
@@ -61,7 +60,6 @@ public class MTRProvider implements VehicleProvider, IntegrationManager.Provider
                 try {
                     Class<?> railClass = Class.forName("mtr.data.Rail");
                     this.getXMethod = railClass.getMethod("getX");
-                    this.getYMethod = railClass.getMethod("getY");
                     this.getZMethod = railClass.getMethod("getZ");
                 } catch (ClassNotFoundException | NoSuchMethodException e) {
                     // 新 MTR 可能是 mtr.path.Path 的 getNodes() 等

@@ -24,11 +24,6 @@ public class FabricPlatform implements PlatformAbstraction {
     // 玩家 UUID → ServerPlayer 缓存
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // isChunkLoaded 反射方法缓存 — 每 tick 对每个候选 chunk 调用, 必须缓存
-    // findMethod 的类层次遍历, 否则成为巨大 CPU 热点.
-    private static java.lang.reflect.Method cachedHasChunk = null;
-    private static Class<?> cachedHasChunkClass = null;
-    
     // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
     public static final TicketType<ChunkPos> CHUNKPILOT_TICKET = 
         TicketType.create("chunkpilot:forced", java.util.Comparator.comparingLong(ChunkPos::toLong), 31);
@@ -80,11 +75,6 @@ public class FabricPlatform implements PlatformAbstraction {
         requestedChunks.clear();
     }
 
-    /** 当前 CP 请求集合大小 (给 /chunkpilot gen stats 用). */
-    public static int getRequestedChunksSize() {
-        return requestedChunks.size();
-    }
-
     // ========== v0.10.4: 持久 CP ticket 集合 ==========
     //
     // 背景: exclusiveGenerationNoC2me mixin 会取消"不在 requestedChunks 里"的生成任务.
@@ -112,11 +102,6 @@ public class FabricPlatform implements PlatformAbstraction {
     /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
     public static boolean isChunkTicketedByCp(long chunkPosLong) {
         return ticketedChunks.contains(chunkPosLong);
-    }
-
-    /** 当前活跃 CP ticket 集合大小 (给 /chunkpilot gen stats 用). */
-    public static int getTicketedChunksSize() {
-        return ticketedChunks.size();
     }
 
     /**
@@ -533,34 +518,6 @@ public class FabricPlatform implements PlatformAbstraction {
         }
     }
 
-    /** 缓存并返回 chunk 已加载检查方法 (hasChunk 优先, 回退 isChunkLoaded). */
-    private static java.lang.reflect.Method resolveHasChunk(Class<?> cls) {
-        if (cachedHasChunk != null && cachedHasChunkClass == cls) return cachedHasChunk;
-        java.lang.reflect.Method m = findMethod(cls, "hasChunk", int.class, int.class);
-        if (m == null) m = findMethod(cls, "isChunkLoaded", int.class, int.class);
-        if (m != null) m.setAccessible(true);
-        cachedHasChunk = m;
-        cachedHasChunkClass = cls;
-        return m;
-    }
-
-    private static java.lang.reflect.Method findMethod(Class<?> clazz, String name, Class<?>... paramTypes) {
-        try {
-            return clazz.getDeclaredMethod(name, paramTypes);
-        } catch (NoSuchMethodException e) {
-            // 遍历父类
-            Class<?> sup = clazz.getSuperclass();
-            while (sup != null) {
-                try {
-                    return sup.getDeclaredMethod(name, paramTypes);
-                } catch (NoSuchMethodException e2) {
-                    sup = sup.getSuperclass();
-                }
-            }
-            return null;
-        }
-    }
-    
     @Override
     public int getPlayerWorldId(UUID playerId) {
         ServerPlayer player = PLAYER_CACHE.get(playerId);

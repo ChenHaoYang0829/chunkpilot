@@ -25,13 +25,7 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
 
     private boolean loaded = false;
     private Class<?> rollingStockClass = null;
-    private Method getTrainMethod = null;
-    private Method getTrackMethod = null;
     private Method getPositionMethod = null;
-
-    // Track API
-    private Class<?> trackClass = null;
-    private Method trackGetNextMethod = null;
 
     private ChunkPilotConfig.Integration config = new ChunkPilotConfig.Integration();
     private final VehicleProvider.Cache<List<ChunkPos>> pathCache = new VehicleProvider.Cache<>(10);
@@ -55,19 +49,6 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
                     break;
                 }
             } catch (ClassNotFoundException ignored) {}
-        }
-
-        // 2. 找 Track API
-        if (loaded) {
-            try {
-                Class<?> tc = Class.forName("cam72cam.modtrack.objects.Track");
-                this.trackClass = tc;
-                this.trackGetNextMethod = findMethod(tc, "next");
-            } catch (ClassNotFoundException ignored) {
-                try {
-                    Class<?> tc = Class.forName("trackapi.lib.Gauge");
-                } catch (ClassNotFoundException ignored2) {}
-            }
         }
     }
 

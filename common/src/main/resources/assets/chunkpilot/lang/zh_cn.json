@@ -101,7 +101,6 @@
   "chunkpilot.command.lang.set": "§a语言已切换为 §e%1$s§a (%2$s§a) §7[仅本次运行有效; 想持久化请改 [general] language]",
   "chunkpilot.command.lang.auto_set": "§a语言已设为自动 §7(玩家跟随客户端语言, 控制台用 en_us) [仅本次运行有效]",
   "chunkpilot.command.lang.unknown": "§c未知语言: §e%1$s§c — 可用: §e%2$s",
-  "chunkpilot.command.lang.usage": "§c用法: /chunkpilot lang [auto|%1$s]",
   "chunkpilot.probe.line": "区块=(%1$d,%2$d) 方块=(%3$d,%4$d) 已加载=%5$s 持有者=%6$s 票等级=%7$d 完成等级=%8$d 等级类型=%9$s",
   "chunkpilot.probe.nearest": "  最近玩家区块=(%1$d,%2$d) 距离=%3$.1f 区块",
   "chunkpilot.probe.marks": "  CP已请求=%1$s CP已发票=%2$s",
