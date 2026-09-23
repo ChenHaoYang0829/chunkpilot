@@ -22,14 +22,12 @@ side = "BOTH"
 [[dependencies.chunkpilot]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.4,1.22)"
+versionRange = "${mcRange}"
 ordering = "NONE"
 side = "BOTH"
 
-# 2026-09-24 死代码清理: 原有 Architectury 的那条 required 依赖声明 —— 已删除。
+# 2026-09-24 死代码清理: 原有一条 [[dependencies.chunkpilot]] modId="architectury" type="required" —— 已删除。
 # 本模组代码零处使用 Architectury (无 @ExpectPlatform, 编译产物零引用), 那条声明只会逼玩家多装一个没用的 mod。
-# 注: 这里刻意不写 "modId" + architectury 的字面组合 —— scripts/verify_artifacts.py 的 architectury
-#     检查是在整份 toml 上正则匹配, 写成字面串会让**这行注释本身**被判成"仍声明 architectury"(假阳性)。
 [[mixins]]
 config = "chunkpilot.mixins.json"
 
