@@ -95,8 +95,6 @@ public class ImmersiveRailroadingProvider implements VehicleProvider, Integratio
             Object pos = getPositionMethod.invoke(vehicle);
             int px = (int) pos.getClass().getMethod("getX").invoke(pos);
             int pz = (int) pos.getClass().getMethod("getZ").invoke(pos);
-            int chunkX = (int) Math.floor(px / 16.0);
-            int chunkZ = (int) Math.floor(pz / 16.0);
 
             // 读车辆 yaw → 方向
             float yaw = 0;

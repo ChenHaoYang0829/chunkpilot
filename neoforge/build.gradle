@@ -34,8 +34,9 @@ dependencies {
     modImplementation "dev.architectury:architectury-neoforge:${rootProject.architecturyVersion}"
 
     // Mixin 注解
-    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.4.1"
-    implementation "io.github.llamalad7:mixinextras-neoforge:0.4.1"
+    // 2026-09-24 死代码盘点: mixinextras **完全未使用** (全仓库 0 处 WrapOperation/
+    //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
+    //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
 
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
     implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"

@@ -1,7 +1,6 @@
 # ===== 构建产物 =====
 build/
 .gradle/
-.local-maven-repo/
 gradle-*.zip
 *.class
 *.jar
@@ -55,3 +54,9 @@ common/logs/
 bench_client/windows_agent/shots_*/
 bench_client/windows_agent/test_v090/
 *.bak.*
+
+# 注意: .local-maven-repo/ **必须**纳入版本控制 ——
+# neoforge/build.gradle 依赖它提供 cpw.mods:modlauncher 11.0.4 / securejarhandler 3.0.8
+# （fancymodloader 要求 11.0.3，公开 maven 上没有，只能靠本地仓库 + resolutionStrategy 强推）。
+# 体积仅 280K，删掉它会让任何干净 clone/新 worktree 的 :neoforge:* 构建必然失败。
+.local-maven-repo/

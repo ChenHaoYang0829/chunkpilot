@@ -6,7 +6,16 @@ import java.util.UUID;
 
 /**
  * 平台抽象层接口
- * Fabric 和 NeoForge 各自实现，通过 Architectury 的 @ExpectPlatform 注入
+ *
+ * Fabric 和 NeoForge 各自直接实现本接口（{@code FabricPlatform} / {@code NeoForgePlatform}），
+ * 由各平台入口显式构造后注入 ChunkPilot：
+ *   - Fabric:  {@code ChunkPilotFabric.onInitialize()} → {@code ServerInitializer.initialize()}
+ *              → {@code new FabricPlatform()} → {@code new ChunkPilot(platform)}
+ *   - NeoForge: {@code ChunkPilotNeoForge} 构造器 → {@code new NeoForgePlatform()}
+ *              → {@code new ChunkPilot(platform)}
+ *
+ * 注意: **没有**使用 Architectury 的 @ExpectPlatform（全仓库 0 处使用），
+ *       本注释历史上曾错误地如此描述。
  */
 public interface PlatformAbstraction {
     
