@@ -23,8 +23,10 @@ dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
     // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
+    // port/1.21.2: 版本按 neoforge-21.2.1-beta.pom 的实际依赖更新
+    //   (21.1.77 = loader/earlydisplay 4.0.31 + bus 8.0.2; 21.2.1-beta = 4.0.29 + bus 8.0.2)
+    implementation "net.neoforged.fancymodloader:loader:4.0.29"
+    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.29"
     implementation "net.neoforged:bus:8.0.2"
 
     // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
@@ -38,7 +40,8 @@ dependencies {
     //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
 
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    // port/1.21.2: 21.2.1-beta.pom 声明的是 0.15.2+mixin.0.8.7
+    implementation "net.fabricmc:sponge-mixin:0.15.2+mixin.0.8.7"
 
     // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar

@@ -4,9 +4,11 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+// port/1.21.2: 版本统一由 root build.gradle 提供 (原来这里硬编码 1.21.3, 与 root 变量不一致)
+//   fabMC 同时驱动 fabric.mod.json 里 ${mcVersion} 的构建期展开 (见文件末 processResources)
+def fabMC = rootProject.minecraftVersion
+def fabLoader = rootProject.fabricLoaderVersion
+def fabApi = rootProject.fabricApiVersion
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }

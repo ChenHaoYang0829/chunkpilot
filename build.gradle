@@ -10,20 +10,23 @@ plugins {
 }
 
 ext {
-    // 版本常量
-    minecraftVersion = "1.21.1"
-    
-    // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
-    
-    // NeoForge
-    neoforgeVersion = "21.1.77"
-    
-    // Architectury
-    architecturyVersion = "13.0.8"
-    
+    // 版本常量 —— port/1.21.2: 两个模块统一到 MC 1.21.2
+    // 注意: fabric.mod.json 的 minecraft 与 neoforge.mods.toml 的 versionRange 都由构建期展开
+    //   (dc2c337): fabric 用 fabMC, neoforge 由 minecraftVersion 自动算出精确区间 [1.21.2,1.21.3)。
+    minecraftVersion = "1.21.2"
+
+    // Fabric (PORT_MATRIX.md: fabric-api 0.106.1+1.21.2 / loader 0.19.5)
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.106.1+1.21.2"
+    yarnMappings = "1.21.2+build.1"   // 死变量 (全仓库无引用), 仅为坐标完整性保留
+
+    // NeoForge —— MC 1.21.2 只有 beta 线 (PORT_MATRIX.md)
+    //   注意: fancymodloader 4.0.29 → modlauncher 11.0.4, 公开仓库没有 ⇒ 依赖 .local-maven-repo
+    neoforgeVersion = "21.2.1-beta"
+
+    // Architectury —— 死变量: main 已彻底移除 architectury 依赖 (零使用)
+    architecturyVersion = "14.0.4"
+
     // Mod
     modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
     modGroup = "com.chunkpilot"
