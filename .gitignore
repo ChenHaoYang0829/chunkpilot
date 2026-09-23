@@ -61,4 +61,4 @@ bench_client/windows_agent/test_v090/
 # 它没有纳入版本控制（280K 的第三方 jar），因此**每个 worktree / 新 clone 都要自行提供**：
 #   bash scripts/setup_local_maven_repo.sh          # 软链或复制到当前仓库根
 # 或者直接用一份现成的: /data/cp-port/artifacts/_tools/local-maven-repo/
-.local-maven-repo/
+.local-maven-repo
