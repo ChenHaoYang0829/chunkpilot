@@ -40,8 +40,10 @@ dependencies {
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
     implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
 
-    // 引用 common 模块源码
-    implementation project(':common')
+    // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
+    // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
+    // 拖进构建图, 而 common 关掉了 jar (jar.enabled=false), 该任务必然失败,
+    // 导致整个 :neoforge:build 崩掉 (2026-09-20 实测: 唯一失败任务就是它)。
 
     // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
     minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"

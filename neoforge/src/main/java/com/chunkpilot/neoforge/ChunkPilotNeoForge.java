@@ -9,6 +9,7 @@ import com.chunkpilot.neoforge.platform.NeoForgePlatform;
 import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -211,36 +212,41 @@ public class ChunkPilotNeoForge {
                     .executes(ctx -> runMain(ctx, new String[]{"status"})))
                 // /chunkpilot reload [player|config]
                 //   /chunkpilot reload (强制重载自己周边)  - 权限 0
-                //   /chunkpilot reload <player>            - 权限 0（强制重载某玩家区块）
+                //   /chunkpilot reload <player>            - 权限 4（强制重载某玩家区块）
                 //   /chunkpilot reload config              - 权限 4（同步服务器配置）
                 .then(Commands.literal("reload")
+                    .requires(src -> src.hasPermission(0))
                     .executes(ctx -> runMain(ctx, new String[]{"reload"}))
                     .then(Commands.literal("config")
                         .requires(src -> src.hasPermission(4))
                         .executes(ctx -> runMain(ctx, new String[]{"reload", "config"})))
                     .then(Commands.argument("player", StringArgumentType.string())
+                        .requires(src -> src.hasPermission(4))
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"reload", StringArgumentType.getString(ctx, "player")}))))
-                // /chunkpilot config show|reload  - 权限 4（同步服务器配置）
+                // /chunkpilot config show|reload  - 权限 4（整个子树，同步服务器配置）
                 .then(Commands.literal("config")
                     .requires(src -> src.hasPermission(4))
                     .then(Commands.literal("show").executes(ctx -> runMain(ctx, new String[]{"config", "show"})))
                     .then(Commands.literal("reload").executes(ctx -> runMain(ctx, new String[]{"config", "reload"}))))
-                // /chunkpilot player [name]  - 权限 0
+                // /chunkpilot player [name]  - 权限 2
                 .then(Commands.literal("player")
+                    .requires(src -> src.hasPermission(2))
                     .executes(ctx -> runMain(ctx, new String[]{"player"}))
                     .then(Commands.argument("name", StringArgumentType.string())
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"player", StringArgumentType.getString(ctx, "name")}))))
-                // /chunkpilot net [name]  - 权限 0
+                // /chunkpilot net [name]  - 不带参数 = 权限 0（看自己）, 带参数 = 权限 4（看别人）
                 .then(Commands.literal("net")
+                    .requires(src -> src.hasPermission(0))
                     .executes(ctx -> runMain(ctx, new String[]{"net"}))
                     .then(Commands.argument("name", StringArgumentType.string())
+                        .requires(src -> src.hasPermission(4))
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"net", StringArgumentType.getString(ctx, "name")}))))
-                // /chunkpilot gen [queue|stats]  - 权限 0
+                // /chunkpilot gen [queue|stats]  - 权限 2
                 .then(Commands.literal("gen")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> src.hasPermission(2))
                     .executes(ctx -> runMain(ctx, new String[]{"gen"}))
                     .then(Commands.literal("queue")
                         .executes(ctx -> runMain(ctx, new String[]{"gen", "queue"})))
@@ -248,16 +254,43 @@ public class ChunkPilotNeoForge {
                         .executes(ctx -> runMain(ctx, new String[]{"gen", "stats"})))
                     .then(Commands.literal("status")
                         .executes(ctx -> runMain(ctx, new String[]{"gen", "status"}))))
-                // /chunkpilot send [status]  - 权限 0
+                // /chunkpilot send [status]  - 权限 2
                 .then(Commands.literal("send")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> src.hasPermission(2))
                     .executes(ctx -> runMain(ctx, new String[]{"send"}))
                     .then(Commands.literal("status")
                         .executes(ctx -> runMain(ctx, new String[]{"send", "status"}))))
-                // /chunkpilot debug  - 权限 0
+                // /chunkpilot debug  - 权限 4
                 .then(Commands.literal("debug")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> src.hasPermission(4))
                     .executes(ctx -> runMain(ctx, new String[]{"debug"})))
+                // /chunkpilot diagnose  - 权限 0（非 OP 走"只看自己"分支）
+                .then(Commands.literal("diagnose")
+                    .requires(src -> src.hasPermission(0))
+                    .executes(ctx -> runMain(ctx, new String[]{"diagnose"})))
+                // /chunkpilot probe [x z]  - 权限 2
+                .then(Commands.literal("probe")
+                    .requires(src -> src.hasPermission(2))
+                    .executes(ctx -> runMain(ctx, new String[]{"probe"}))
+                    .then(Commands.argument("x", IntegerArgumentType.integer())
+                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                            .executes(ctx -> runMain(ctx, new String[]{
+                                "probe",
+                                String.valueOf(IntegerArgumentType.getInteger(ctx, "x")),
+                                String.valueOf(IntegerArgumentType.getInteger(ctx, "z"))})))))
+                // /chunkpilot lang [code]  - 不带参数 = 权限 0, 带参数 = 权限 2
+                .then(Commands.literal("lang")
+                    .requires(src -> src.hasPermission(0))
+                    .executes(ctx -> runMain(ctx, new String[]{"lang"}))
+                    .then(Commands.argument("code", StringArgumentType.string())
+                        // 切换语言是**服务端全局**行为 (影响控制台与 auto 模式下所有玩家), 需要 op
+                        .requires(src -> src.hasPermission(2))
+                        .suggests((ctx, b) -> {
+                            b.suggest("auto");
+                            for (String code : com.chunkpilot.i18n.I18n.availableLanguages()) b.suggest(code);
+                            return b.buildFuture();
+                        })
+                        .executes(ctx -> runMain(ctx, new String[]{"lang", StringArgumentType.getString(ctx, "code")}))))
                 // /chunkpilot help  - 权限 0
                 .then(Commands.literal("help")
                     .requires(src -> src.hasPermission(0))
@@ -267,11 +300,20 @@ public class ChunkPilotNeoForge {
         LOGGER.info("ChunkPilot: /chunkpilot command registered (with subcommands)");
     }
 
+    /** 把命令源的权限等级压成 CP 认识的三档 (0 / 2 / 4). 控制台恒为 4。 */
+    private static int permLevel(CommandSourceStack src) {
+        if (src.hasPermission(4)) return 4;
+        if (src.hasPermission(3)) return 3;
+        if (src.hasPermission(2)) return 2;
+        return src.hasPermission(1) ? 1 : 0;
+    }
+
     private static int runMain(CommandContext<CommandSourceStack> ctx, String[] args) {
         var player = ctx.getSource().getPlayer();
         UUID execId = player != null ? player.getUUID() : null;
         String name = player != null ? player.getGameProfile().getName() : "console";
-        String resp = ChunkPilotCommand.execute(execId, name, args);
+        // v0.11.9: 权限判定集中在 ChunkPilotCommand (堵住 /chunkpilot 无参绕过 requires 的问题)
+        String resp = ChunkPilotCommand.execute(execId, name, args, permLevel(ctx.getSource()));
         for (String line : resp.split("\n")) {
             ctx.getSource().sendSystemMessage(
                 net.minecraft.network.chat.Component.literal(line));

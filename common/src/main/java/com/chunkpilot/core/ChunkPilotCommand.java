@@ -46,8 +46,103 @@ public class ChunkPilotCommand {
         return I18n.tr("chunkpilot.prefix");
     }
 
-    /** 主入口 */
+    // ================= v0.11.9 权限策略 (集中在一处, Fabric/NeoForge 共用) =================
+    //
+    // 规则 (用户 2026-09-20 拍板):
+    //   * 只要一个子命令能拿到"原版客户端拿不到的数据", 就必须 OP。
+    //   * level 0 可用的只有: help / debug 之外的那些明确无害的 —— 见下表。
+    //
+    // 为什么策略放在这里而不是只靠 Brigadier `requires`:
+    //   Brigadier 的 requires 挂在**节点**上, 而根节点 `chunkpilot` 必须保持 0
+    //   (否则连 `/chunkpilot help` 都进不来), 于是 `/chunkpilot`(无参→status) 会绕过限制。
+    //   平台层把命令源的权限等级传进来, 这里统一判定 ⇒ 无参路径也堵住了。
+    //
+    // 平台层仍需**同时**设置 requires: 这样非 OP 在 Tab 补全里根本看不到无权子命令。
+
+    /** 所有人都能用 */
+    public static final int PERM_ALL = 0;
+    /** OP */
+    public static final int PERM_OP = 2;
+    /** 服主 / 服务器管理 (改服务端配置、调试) */
+    public static final int PERM_OWNER = 4;
+
+    /**
+     * 该子命令(含参数形态)需要的权限等级。
+     *
+     *   help                       0   (纯静态文本)
+     *   status                     0   (已剔除 tickets/mixinCalls/overrideCalls/providers)
+     *   lang (查看)                0
+     *   lang <code>                2   (全局切换, 影响所有人)
+     *   reload                     0   (只重载**自己**的票)
+     *   reload <player>            4   (动别人)
+     *   reload config / config *   4
+     *   net                        0   (只看自己)
+     *   net <player>               4   (看别人的收发字节/ping)
+     *   player                     2
+     *   gen / send / probe         2
+     *   diagnose                   0   (非 OP 只显示自己那一行; OP 显示全部)
+     *   debug                      4
+     */
+    public static int requiredLevel(String[] args) {
+        return requiredLevel(null, null, args);
+    }
+
+    /**
+     * @param execName 命令执行者的名字 (玩家名), 用于"reload 自己的名字也算重载自己"的判断;
+     *                 null = 未知 (按最小权限处理)
+     */
+    public static int requiredLevel(UUID executorId, String execName, String[] args) {
+        if (args == null || args.length == 0) return PERM_ALL;   // 无参 = status
+        switch (args[0].toLowerCase()) {
+            case "help":
+                return PERM_ALL;
+            case "status":
+                return PERM_ALL;
+            case "lang":
+            case "language":
+                return args.length >= 2 ? PERM_OP : PERM_ALL;
+            case "reload":
+                if (args.length <= 1) return PERM_ALL;                       // 重载自己
+                if ("config".equalsIgnoreCase(args[1])) return PERM_OWNER;   // 重载服务端配置
+                // 显式写出自己的名字 = 重载自己, 同样 0 级 (用户口径: "重载自己=0, 重载别人=4")
+                if (execName != null && execName.equalsIgnoreCase(args[1])) return PERM_ALL;
+                return PERM_OWNER;                                           // 重载别人
+            case "config":
+                return PERM_OWNER;
+            case "net":
+                return args.length >= 2 ? PERM_OWNER : PERM_ALL;             // 只看自己 = 0
+            case "player":
+                return PERM_OP;
+            case "gen":
+            case "send":
+            case "probe":
+                return PERM_OP;
+            case "diagnose":
+            case "diag":
+                return PERM_ALL;   // 非 OP 走"只看自己"分支
+            case "debug":
+                return PERM_OWNER;
+            default:
+                return PERM_ALL;
+        }
+    }
+
+    /** 旧的三参入口: 视为"未知权限来源" ⇒ 按最小权限处理 (fail-closed)。 */
     public static String execute(UUID executorId, String executorName, String[] args) {
+        return execute(executorId, executorName, args, PERM_ALL);
+    }
+
+    /** 主入口 (平台层应传命令源的真实权限等级) */
+    public static String execute(UUID executorId, String executorName, String[] args, int permLevel) {
+        int need = requiredLevel(executorId, executorName, args);
+        if (permLevel < need) {
+            ChunkPilot cp = ChunkPilot.getInstance();
+            if (cp != null && cp.getPlatform() != null) {
+                cp.getPlatform().logCommand(executorName,
+                    "DENIED " + String.join(" ", args) + " (need=" + need + " have=" + permLevel + ")");
+            }
+            return prefix() + I18n.trFor(executorId, "chunkpilot.error.need_op", need, permLevel);
+        }
         if (args == null || args.length == 0) return executeStatus(executorId, executorName);
         switch (args[0].toLowerCase()) {
             case "status":  return executeStatus(executorId, executorName);
@@ -58,14 +153,12 @@ public class ChunkPilotCommand {
             case "gen":     return executeGen(executorId, executorName, args);
             case "send":    return executeSend(executorId, executorName, args);
             case "probe":   return executeProbe(executorId, executorName, args);
-            case "lang":
-            case "language":return executeLang(executorId, executorName, args);
+            case "lang":    return executeLang(executorId, executorName, args);
             case "diagnose":
             case "diag":    return executeDiagnose(executorId, executorName, args);
             case "debug":   return executeDebug(executorId, executorName);
             case "help":
-            case "?":
-            default:        return getHelpText(executorId);
+            default:        return getHelpText(executorId, permLevel);
         }
     }
 
@@ -173,8 +266,17 @@ public class ChunkPilotCommand {
      * 所有查询都用非加载 API (hasChunk / probeChunk), 不会自己制造停摆.
      */
     public static String executeDiagnose(UUID executorId, String executorName, String[] args) {
+        return executeDiagnose(executorId, executorName, args, PERM_ALL);
+    }
+
+    /**
+     * @param permLevel 非 OP (level < 2) 时只输出执行者**自己**那一行;
+     *                  总需求、主线程阻塞计数、前瞻窗口统计、"最差玩家"全部隐藏。
+     */
+    public static String executeDiagnose(UUID executorId, String executorName, String[] args,
+                                         int permLevel) {
         try {
-            return diagnose0(executorId, executorName);
+            return diagnose0(executorId, executorName, permLevel >= PERM_OP);
         } catch (Throwable t) {
             // 体检本身绝不能因为玩家刚好掉线/跨维度而报 "unexpected error"
             LOG.warn("[ChunkPilot] diagnose failed: {}", t.toString());
@@ -182,7 +284,7 @@ public class ChunkPilotCommand {
         }
     }
 
-    private static String diagnose0(UUID executorId, String executorName) {
+    private static String diagnose0(UUID executorId, String executorName, boolean full) {
         ChunkPilot cp = ChunkPilot.getInstance();
         if (cp == null) return I18n.trFor(executorId, "chunkpilot.error.not_initialized");
         PlatformAbstraction platform = cp.getPlatform();
@@ -203,6 +305,8 @@ public class ChunkPilotCommand {
         String worstPlayer = null;
         for (var e : online.entrySet()) {
             UUID id = e.getKey();
+            // v0.11.9: 非 OP 只允许看自己
+            if (!full && (executorId == null || !executorId.equals(id))) continue;
             int[] pc = platform.getPlayerChunkPos(id);
             if (pc == null) continue;
             int worldId = platform.getPlayerWorldId(id);
@@ -235,14 +339,19 @@ public class ChunkPilotCommand {
             sb.append(prefix()).append(I18n.trFor(id, "chunkpilot.command.diagnose.player",
                 flag, vBpt, vMs, pc[0], pc[1], frontier, demand, fwText));
         }
-        sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.total",
-                totalDemand, vd, online.size()));
-        long parkSubs = platform.getParkSubstitutions();
-        sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.park",
-                parkSubs,
-                parkSubs > 0 ? I18n.trFor(executorId, "chunkpilot.command.diagnose.park.warn") : ""));
-        sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.fw_stats",
-                cp.getOptimizer().getForwardWindow().statsText(executorId)));
+        if (!full) {
+            sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.error.diagnose_self_only"))
+              .append('\n');
+        } else {
+            sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.total",
+                    totalDemand, vd, online.size()));
+            long parkSubs = platform.getParkSubstitutions();
+            sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.park",
+                    parkSubs,
+                    parkSubs > 0 ? I18n.trFor(executorId, "chunkpilot.command.diagnose.park.warn") : ""));
+            sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.fw_stats",
+                    cp.getOptimizer().getForwardWindow().statsText(executorId)));
+        }
 
         // 结论
         if (!c2me) {
@@ -261,7 +370,7 @@ public class ChunkPilotCommand {
         } else {
             sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.c2me_ok"));
         }
-        if (worstPlayer != null) {
+        if (full && worstPlayer != null) {
             sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.diagnose.worst",
                     worstPlayer, worstFrontier,
                     worstFrontier < 4
@@ -672,33 +781,41 @@ public class ChunkPilotCommand {
     // ================= help =================
 
     public static String getHelpText() {
-        return getHelpText(null);
+        return getHelpText(null, PERM_OWNER);
     }
 
     public static String getHelpText(UUID executorId) {
+        return getHelpText(executorId, PERM_ALL);
+    }
+
+    /** v0.11.9: 无权限的条目直接不显示 (不再暴露"有这么个命令可用")。 */
+    public static String getHelpText(UUID executorId, int permLevel) {
         String p = prefix();
-        String[] keys = {
-            "chunkpilot.command.help.header",
-            "chunkpilot.command.help.status",
-            "chunkpilot.command.help.reload",
-            "chunkpilot.command.help.reload_config",
-            "chunkpilot.command.help.config_show",
-            "chunkpilot.command.help.config_reload",
-            "chunkpilot.command.help.player",
-            "chunkpilot.command.help.net",
-            "chunkpilot.command.help.gen",
-            "chunkpilot.command.help.send",
-            "chunkpilot.command.help.probe",
-            "chunkpilot.command.help.diagnose",
-            "chunkpilot.command.help.probe_warning",
-            "chunkpilot.command.help.lang",
-            "chunkpilot.command.help.debug",
-            "chunkpilot.command.help.help",
+        // { 文案 key, 需要等级 } —— 与 requiredLevel() 保持同一张口径
+        String[][] entries = {
+            {"chunkpilot.command.help.header",        "0"},
+            {"chunkpilot.command.help.status",        "0"},
+            {"chunkpilot.command.help.reload",        "0"},
+            {"chunkpilot.command.help.reload_config", "4"},
+            {"chunkpilot.command.help.config_show",   "4"},
+            {"chunkpilot.command.help.config_reload", "4"},
+            {"chunkpilot.command.help.player",        "2"},
+            {"chunkpilot.command.help.net",           "0"},
+            {"chunkpilot.command.help.gen",           "2"},
+            {"chunkpilot.command.help.send",          "2"},
+            {"chunkpilot.command.help.probe",         "2"},
+            {"chunkpilot.command.help.diagnose",      "0"},
+            {"chunkpilot.command.help.probe_warning", "2"},
+            {"chunkpilot.command.help.lang",          "0"},
+            {"chunkpilot.command.help.debug",         "4"},
+            {"chunkpilot.command.help.help",          "0"},
         };
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < keys.length; i++) {
-            String line = I18n.trFor(executorId, keys[i]);
-            sb.append(i == 0 ? p : "\n" + p).append(line);
+        boolean first = true;
+        for (String[] e : entries) {
+            if (permLevel < Integer.parseInt(e[1])) continue;
+            sb.append(first ? p : "\n" + p).append(I18n.trFor(executorId, e[0]));
+            first = false;
         }
         return sb.toString();
     }

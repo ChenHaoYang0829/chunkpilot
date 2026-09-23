@@ -657,12 +657,12 @@ public class ChunkLoadOptimizer {
      * @param viewerId 命令执行者 (玩家 → 用其客户端语言; null/控制台 → 全局语言)
      */
     public String getStatusText(java.util.UUID viewerId) {
-        int totalTickets = playerActiveTickets.values().stream().mapToInt(v -> v.tickets().size()).sum();
+        // v0.11.9: 本命令 0 级可用 ⇒ 不再输出任何服务端内部计数
+        //   (原来会输出 CP 票数 / mixin 调用数 / override 调用数 / 模组联动列表)
         return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.optimizer.status",
             com.chunkpilot.ChunkPilot.VERSION,
             config.enabled, config.mode, platform.getServerRenderDistance(),
-            platform.getCurrentMspt(), getActivePlayerCount(), totalTickets,
-            totalMixinCalls, totalOverrideCalls, integrationManager.getProviderSummary());
+            platform.getCurrentMspt(), getActivePlayerCount());
     }
 
     /** 玩家级调试信息 (输出语言跟随该玩家自己的客户端语言) */
