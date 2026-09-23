@@ -22,10 +22,11 @@ configurations.all {
 dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
-    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
+    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 曾无法自动解析）
+    // port/1.21.7: 版本按 neoforge-21.7.25-beta.pom 对齐 (FML loader/earlydisplay 9.0.14 / bus 8.0.5)
+    implementation "net.neoforged.fancymodloader:loader:9.0.14"
+    implementation "net.neoforged.fancymodloader:earlydisplay:9.0.14"
+    implementation "net.neoforged:bus:8.0.5"
 
     // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
     //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
@@ -36,9 +37,11 @@ dependencies {
     // 2026-09-24 死代码盘点: mixinextras **完全未使用** (全仓库 0 处 WrapOperation/
     //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
     //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
+    // (port/1.21.7 合并 main 时按 main 的结构性修复保留"删除 mixinextras",
+    //  21.7.25-beta.pom 虽声明它, 但 NeoForge 运行时自带, 编译期不需要)
 
-    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径; 21.7.25-beta = 0.15.2+mixin.0.8.7）
+    implementation "net.fabricmc:sponge-mixin:0.15.2+mixin.0.8.7"
 
     // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
@@ -85,6 +88,30 @@ sourceSets {
 tasks.named('remapJar').configure { enabled = false }
 
 // 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
+//
+// ==================== port/1.21.7: 硬编码 refmap 与 1.21.7 真实签名的逐一核对 ====================
+// (brief §3-7 要求: refmap 里的 descriptor 必须与 mixins.json 注册的 mixin 集合 + javap 实证的
+//  真实签名对齐, 否则 Mixin 找不到目标 → 因为 chunkpilot.mixins.json 是 required=true /
+//  defaultRequire=1, 会**启动崩溃**。下面的签名已用 loom 映射后的 1.21.7 minecraft-merged jar
+//  逐条 javap 核实 (2026-09-24):
+//    ChunkMapMixin.updatePlayerPos     : ChunkMap.updatePlayerPos(ServerPlayer)V          ✓ 存在 (private, Mixin 可注入)
+//    ChunkMapMixin.move                : ChunkMap.move(ServerPlayer)V                     ✓ 存在 (public)
+//    PlayerChunkSenderMixin.collectChunksToSend
+//                                      : PlayerChunkSender.collectChunksToSend(ChunkMap,ChunkPos)List  ✓ 存在 (private)
+//    PlayerChunkSenderSendMixin.sendNextChunks
+//                                      : PlayerChunkSender.sendNextChunks(ServerPlayer)V  ✓ 存在 (public)
+//    ServerPlayerMixin.teleportTo      : ServerPlayer.teleportTo(DDD)V                    ✓ 存在 (public)
+//  ⇒ 1.21.7 上**无需改动**这 5 条 descriptor (它们与 1.21.1/1.21.3 一致)。
+//
+// 另两个注册在 mixins.json 里、但**故意不在**本 refmap 里的 mixin (它们的目标方法是用
+// 完整描述符字符串写的, 且已经是 Mojang 命名, 不需要 refmap 重写):
+//    ConnectionNetTrackerMixin : Connection.send(Packet;Lio/netty/channel/ChannelFutureListener;Z)V
+//        ← **1.21.7 改过**: 1.21.3 是 PacketSendListener, 1.21.7 换成 ChannelFutureListener
+//          (javap 实证), 已在 mixin 源码里同步修改; 若忘了改, 这里会变成"启动崩溃"。
+//      + Connection.channelRead0(ChannelHandlerContext,Packet)  ✓ 存在 (protected)
+//    CheckExtensibleEnumsMixin : @Overwrite NeoForge CheckExtensibleEnums.start(Consumer)
+//        (remap=false; 目标类在 neoforge-21.7.25-beta-universal.jar 里存在 ✓)
+// ==============================================================================================
 tasks.register('fixRefmap') {
     doLast {
         def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")

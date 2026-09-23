@@ -42,14 +42,44 @@ public class CheckExtensibleEnumsMixin {
     @Overwrite
     public void start(Consumer<Packet<?>> consumer) {
         try {
-            if (cls == null) return;
+            if (cls == null || listenerField == null || typeField == null) {
+                LOG.error("[ChunkPilot] CheckExtensibleEnumsMixin not ready (reflection setup failed)");
+                return;
+            }
             Object listener = listenerField.get(this);
             Object type = typeField.get(null);
-            // finishCurrentTask is private in vanilla; call via reflection
-            Method m = listener.getClass().getMethod("finishCurrentTask", Class.forName("net.minecraft.server.network.ConfigurationTask$Type"));
+            // port/1.21.7: finishCurrentTask 在 1.21.7 是 **private**
+            //   (javap 实证 ServerConfigurationPacketListenerImpl: `private void
+            //    finishCurrentTask(ConfigurationTask$Type)`), 而旧代码用 getMethod(...)
+            //   只能找 public 方法 ⇒ 1.21.7 上必然 NoSuchMethodException → 配置阶段任务永远
+            //   完不成 → 客户端卡在 configuration 阶段 (连不进去).
+            //   改成 declared-method + setAccessible, 并在类层次里向上找.
+            Method m = finishCurrentTask(listener.getClass());
+            if (m == null) {
+                LOG.error("[ChunkPilot] finishCurrentTask not found on {}", listener.getClass());
+                return;
+            }
+            m.setAccessible(true);
             m.invoke(listener, type);
         } catch (Exception e) {
             LOG.error("[ChunkPilot] CheckExtensibleEnumsMixin.start failed", e);
         }
+    }
+
+    /** 在 listener 的类层次里找 finishCurrentTask(ConfigurationTask$Type) (含 private). */
+    private static Method finishCurrentTask(Class<?> c) {
+        try {
+            Class<?> taskType = Class.forName("net.minecraft.server.network.ConfigurationTask$Type");
+            for (Class<?> cur = c; cur != null; cur = cur.getSuperclass()) {
+                try {
+                    return cur.getDeclaredMethod("finishCurrentTask", taskType);
+                } catch (NoSuchMethodException ignored) {
+                    // 继续向上找
+                }
+            }
+        } catch (Throwable t) {
+            LOG.error("[ChunkPilot] finishCurrentTask lookup failed", t);
+        }
+        return null;
     }
 }

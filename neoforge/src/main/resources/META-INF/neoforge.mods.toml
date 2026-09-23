@@ -15,7 +15,7 @@ Smart chunk loading and rendering optimization for high-speed travel (elytra, tr
 [[dependencies.chunkpilot]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
+versionRange = "[21.7-beta,)"
 ordering = "NONE"
 side = "BOTH"
 

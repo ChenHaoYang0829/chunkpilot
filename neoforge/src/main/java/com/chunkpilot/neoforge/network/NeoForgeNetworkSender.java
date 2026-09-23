@@ -201,10 +201,14 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendConfigOverride(ClientConfigOverridePacket packet) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ConfigOverridePayload(
+            // port/1.21.7: NeoForge 21.7 把"客户端 → 服务端"发送从
+            //   net.neoforged.neoforge.network.PacketDistributor.sendToServer 移到了
+            //   net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer
+            //   (javap 实证: 公共 PacketDistributor 只剩 sendToPlayer/sendToAllPlayers 等服务端侧方法)。
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ConfigOverridePayload(
                 packet.targetFps, packet.meshingQueueSize,
                 packet.avgFrameTimeMs, packet.clientRenderEnabled));
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOG.warn("Failed to send config override: {}", e.getMessage());
         }
     }
@@ -212,8 +216,8 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendClientCapability(boolean hasCP, int protocolVersion) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
-        } catch (Exception e) {
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
+        } catch (Throwable e) {
             LOG.warn("Failed to send client capability: {}", e.getMessage());
         }
     }

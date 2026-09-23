@@ -21,8 +21,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // port/1.21.7: 1.21.7 的 Connection.send 第 2 参数从 `PacketSendListener` 换成了
+    //   `io.netty.channel.ChannelFutureListener` (javap 实证 net.minecraft.network.Connection:
+    //   send(Packet, ChannelFutureListener, boolean) / sendPacket(Packet, ChannelFutureListener, boolean);
+    //   旧的 send(Packet, PacketSendListener, boolean) 已不存在)。
+    //   描述符写错 = mixin 注入失败 → 因为本 mixin 配置是 required=true / defaultRequire=1,
+    //   会直接**启动崩溃**, 所以这里必须跟着改。
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();
