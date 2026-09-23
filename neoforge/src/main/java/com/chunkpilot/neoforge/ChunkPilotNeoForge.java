@@ -42,8 +42,32 @@ public class ChunkPilotNeoForge {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("ChunkPilot");
 
+    /**
+     * port/1.21.10: CP 私有 TicketType 的注册通道。
+     *
+     * 1.21.10 起 `TicketType` 变成 record, 且 `Ticket.CODEC` 用
+     * `BuiltInRegistries.TICKET_TYPE.byNameCodec()` 序列化类型 —— 自定义票据类型**必须注册**,
+     * 否则存档保存时编码会失败。NeoForge 在 mod 构造期内置注册表已 frozen
+     * (直接 `Registry.register` 会抛 `IllegalStateException: Registry is already frozen`,
+     * 2026-09-24 实测), 所以走 `DeferredRegister` + `RegisterEvent` 阶段注册。
+     *
+     * 注册的是 `NeoForgePlatform` 里那两个常量**同一个实例** ——
+     * `TicketStorage` 的 add/remove 匹配用引用相等 (`if_acmpne`), 必须是同一实例。
+     */
+    public static final net.neoforged.neoforge.registries.DeferredRegister<net.minecraft.server.level.TicketType>
+        TICKET_TYPES = net.neoforged.neoforge.registries.DeferredRegister.create(
+            net.minecraft.core.registries.Registries.TICKET_TYPE, ChunkPilot.MOD_ID);
+
+    static {
+        TICKET_TYPES.register("forced", () -> com.chunkpilot.neoforge.platform.NeoForgePlatform.CHUNKPILOT_TICKET);
+        TICKET_TYPES.register("gen", () -> com.chunkpilot.neoforge.platform.NeoForgePlatform.CHUNKPILOT_GEN_TICKET);
+    }
+
     public ChunkPilotNeoForge(IEventBus modEventBus) {
         LOGGER.info("ChunkPilot initializing on NeoForge...");
+
+        // port/1.21.10: 票据类型注册 (必须在 RegisterEvent 阶段, 见 TICKET_TYPES 注释)
+        TICKET_TYPES.register(modEventBus);
 
         PlatformAbstraction platform = new NeoForgePlatform();
         new ChunkPilot(platform);
@@ -195,7 +219,7 @@ public class ChunkPilotNeoForge {
         SuggestionProvider<CommandSourceStack> playerSuggest = (context, builder) -> {
             return SharedSuggestionProvider.suggest(
                 context.getSource().getServer().getPlayerList().getPlayers().stream()
-                    .map(p -> p.getGameProfile().getName()),
+                    .map(p -> p.getGameProfile().name()),
                 builder
             );
         };
@@ -311,7 +335,7 @@ public class ChunkPilotNeoForge {
     private static int runMain(CommandContext<CommandSourceStack> ctx, String[] args) {
         var player = ctx.getSource().getPlayer();
         UUID execId = player != null ? player.getUUID() : null;
-        String name = player != null ? player.getGameProfile().getName() : "console";
+        String name = player != null ? player.getGameProfile().name() : "console";
         // v0.11.9: 权限判定集中在 ChunkPilotCommand (堵住 /chunkpilot 无参绕过 requires 的问题)
         String resp = ChunkPilotCommand.execute(execId, name, args, permLevel(ctx.getSource()));
         for (String line : resp.split("\n")) {

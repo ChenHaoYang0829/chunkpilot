@@ -22,10 +22,11 @@ configurations.all {
 dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
-    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
+    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 无法自动解析）
+    // port/1.21.10: 版本按 neoforge-21.10.64.pom 对齐 (FML 10.0.32 / bus 8.0.5)
+    implementation "net.neoforged.fancymodloader:loader:10.0.32"
+    implementation "net.neoforged.fancymodloader:earlydisplay:10.0.32"
+    implementation "net.neoforged:bus:8.0.5"
 
     // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
     //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
@@ -37,8 +38,8 @@ dependencies {
     //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
     //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
 
-    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径; 21.10.64 = 0.16.5+mixin.0.8.7）
+    implementation "net.fabricmc:sponge-mixin:0.16.5+mixin.0.8.7"
 
     // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
@@ -97,12 +98,28 @@ tasks.register('fixRefmap') {
         ant.unjar(src: jarFile, dest: tmpDir)
         
         // 写新的 Mojang 命名 refmap
+        //
+        // port/1.21.10: 这里的 descriptor 全部按 **1.21.10 服务端 jar 的 javap 实证** 重写过,
+        //   并与 `neoforge/src/main/resources/chunkpilot.mixins.json` 注册的 mixin 集合对齐
+        //   (下面还有一段一致性校验, 集合不一致就直接让构建失败, 避免"编译通过但启动崩溃").
+        //   javap 证据 (minecraft-merged 1.21.10, Mojang official mappings):
+        //     ChunkMap.updatePlayerPos(ServerPlayer)V          private
+        //     ChunkMap.move(ServerPlayer)V                     public
+        //     PlayerChunkSender.collectChunksToSend(ChunkMap, ChunkPos)List   private
+        //     PlayerChunkSender.sendNextChunks(ServerPlayer)V  public
+        //     ServerPlayer.teleportTo(DDD)V                    public
+        //     Connection.send(Packet, ChannelFutureListener, boolean)V  public   ← 1.21.10 变化点
+        //     Connection.channelRead0(ChannelHandlerContext, Packet)V   protected
         def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
         refmapFile.text = '''{
   "mappings": {
     "com/chunkpilot/neoforge/mixin/ChunkMapMixin": {
       "updatePlayerPos": "Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V",
       "move": "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"
+    },
+    "com/chunkpilot/neoforge/mixin/ConnectionNetTrackerMixin": {
+      "send": "Lnet/minecraft/network/Connection;send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V",
+      "channelRead0": "Lnet/minecraft/network/Connection;channelRead0(Lio/netty/channel/ChannelHandlerContext;Lnet/minecraft/network/protocol/Packet;)V"
     },
     "com/chunkpilot/neoforge/mixin/PlayerChunkSenderMixin": {
       "collectChunksToSend": "Lnet/minecraft/server/network/PlayerChunkSender;collectChunksToSend(Lnet/minecraft/server/level/ChunkMap;Lnet/minecraft/world/level/ChunkPos;)Ljava/util/List;"
@@ -116,6 +133,24 @@ tasks.register('fixRefmap') {
   }
 }
 '''
+
+        // ---- 一致性校验: refmap 里必须覆盖 chunkpilot.mixins.json 注册的每个 mixin 类 ----
+        // CheckExtensibleEnumsMixin 是 `@Mixin(targets = "net.neoforged...", remap = false)`,
+        // 目标是 NeoForge 自己的类 (非 MC 命名), 按设计不进 refmap。
+        def mixinsJson = file('src/main/resources/chunkpilot.mixins.json')
+        def declared = new groovy.json.JsonSlurper().parse(mixinsJson).mixins as List
+        def noRefmap = ['CheckExtensibleEnumsMixin'] as Set
+        def mapped = new groovy.json.JsonSlurper().parse(refmapFile).mappings.keySet()
+            .collect { it.substring(it.lastIndexOf('/') + 1) } as Set
+        def missing = declared.findAll { !noRefmap.contains(it) && !mapped.contains(it) }
+        def extra = mapped.findAll { !declared.contains(it) }
+        if (missing || extra) {
+            ant.delete(file: jarFile)
+            throw new GradleException(
+                "fixRefmap 与 chunkpilot.mixins.json 不一致: 缺 refmap 条目=$missing, 多余条目=$extra. " +
+                "请同步 neoforge/build.gradle 里硬编码的 refmap JSON (每次换 MC 版本都要对 descriptor).")
+        }
+        println "fixRefmap: refmap 覆盖 mixin 集合校验通过 (${declared.size()} 个注册, ${mapped.size()} 个有 refmap)"
         // 重打包
         ant.delete(file: jarFile)
         ant.zip(destfile: jarFile, basedir: tmpDir)

@@ -28,13 +28,87 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
-    public static final TicketType<ChunkPos> CHUNKPILOT_TICKET =
-        TicketType.create("chunkpilot:forced", Comparator.comparingLong(ChunkPos::toLong), 31);
+    // ========== port/1.21.10: TicketType / ticket 投递 API 变了 (与 fabric 侧同步) ==========
+    //
+    // javap 实证 (1.21.10 Mojang official):
+    //   TicketType 变成 record (long timeout, int flags), `TicketType.create(...)` 已不存在;
+    //   等级封装进 `new Ticket(TicketType, int level)`;
+    //   DistanceManager.addTicket/removeTicket 已移除 (挪进 net.minecraft.world.level.TicketStorage,
+    //   由 ServerChunkCache 私有字段 ticketStorage 持有);
+    //   ServerChunkCache 只保留 public addTicket(Ticket, ChunkPos) /
+    //   addTicketWithRadius / removeTicketWithRadius (radius 语义, 不适用显式等级票据).
+    // NeoForge 运行时是 Mojang 命名 (remapJar 被禁用), 所以移除路径直接用**按名反射**取
+    // ticketStorage 是安全的 (与 fabric 侧不同 —— 那边必须用 mixin accessor).
+    public static final TicketType CHUNKPILOT_TICKET = chunkpilot$newTicketType(
+        TicketType.NO_TIMEOUT, TicketType.FLAG_LOADING | TicketType.FLAG_SIMULATION);
 
-    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成)
-    public static final TicketType<ChunkPos> CHUNKPILOT_GEN_TICKET =
-        TicketType.create("chunkpilot:gen", Comparator.comparingLong(ChunkPos::toLong), 31);
+    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成), 200 ticks 过期.
+    public static final TicketType CHUNKPILOT_GEN_TICKET =
+        chunkpilot$newTicketType(200L, TicketType.FLAG_LOADING);
+
+    /** port/1.21.10: 预生成票据等级 = 33 (FULL, 不参与 block/entity tick), 与 fabric 侧一致. */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
+    /**
+     * port/1.21.10: 构造 CP 私有 TicketType。
+     *
+     * **注册不在本方法里做** —— NeoForge 在 mod 构造期 BuiltInRegistries 已经是 frozen,
+     * 直接 `Registry.register(...)` 会抛 `IllegalStateException: Registry is already frozen`
+     * (2026-09-24 05:21 实测日志)。NeoForge 的正确姿势是 `DeferredRegister` 在
+     * `RegisterEvent` 阶段注册, 见 `ChunkPilotNeoForge#TICKET_TYPES`。
+     *
+     * 为什么必须注册: `Ticket.CODEC` 用 `BuiltInRegistries.TICKET_TYPE.byNameCodec()` 序列化类型
+     * (javap 实证), 未注册的类型会让存档保存报错。
+     */
+    private static TicketType chunkpilot$newTicketType(long timeout, int flags) {
+        return new TicketType(timeout, flags);
+    }
+
+    /** 缓存 ServerChunkCache.ticketStorage 字段 (Mojang 命名, NeoForge 运行时可直接按名反射). */
+    private static java.lang.reflect.Field ticketStorageField = null;
+    private static boolean ticketStorageResolved = false;
+
+    private static Object chunkpilot$ticketStorage(net.minecraft.server.level.ServerChunkCache source) {
+        if (!ticketStorageResolved) {
+            ticketStorageResolved = true;
+            try {
+                Class<?> cur = source.getClass();
+                while (cur != null) {
+                    try {
+                        java.lang.reflect.Field f = cur.getDeclaredField("ticketStorage");
+                        f.setAccessible(true);
+                        ticketStorageField = f;
+                        break;
+                    } catch (NoSuchFieldException ignored) {
+                        cur = cur.getSuperclass();
+                    }
+                }
+            } catch (Throwable t) {
+                LOG.warn("[ChunkPilot] ticketStorage 反射失败: {}", t.toString());
+            }
+        }
+        if (ticketStorageField == null) return null;
+        try {
+            return ticketStorageField.get(source);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static boolean chunkpilot$removeTicket(ServerLevel world, TicketType type, ChunkPos pos, int level) {
+        try {
+            Object storage = chunkpilot$ticketStorage(world.getChunkSource());
+            if (storage == null) return false;
+            // public TicketStorage.removeTicket(Ticket, ChunkPos)
+            storage.getClass()
+                .getMethod("removeTicket", net.minecraft.server.level.Ticket.class, ChunkPos.class)
+                .invoke(storage, new net.minecraft.server.level.Ticket(type, level), pos);
+            return true;
+        } catch (Throwable t) {
+            LOG.debug("[ChunkPilot] removeTicket failed: {}", t.toString());
+            return false;
+        }
+    }
 
     // C2ME 兼容: 检测 C2ME 是否加载
     private Boolean c2meCached = null;
@@ -115,10 +189,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
         ServerLevel world = findWorld(server, worldId);
         if (world == null) return false;
 
-        // v0.10: 改用 addTicket (单区块) 直接指定加载等级, 支持远处浅层加载.
+        // v0.10: 直接指定加载等级, 支持远处浅层加载.
+        // port/1.21.10: DistanceManager.addTicket → ServerChunkCache.addTicket(new Ticket(type, level), pos)
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .addTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        world.getChunkSource().addTicket(new net.minecraft.server.level.Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
         return true;
     }
 
@@ -130,8 +204,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         if (world == null) return false;
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .removeTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        chunkpilot$removeTicket(world, CHUNKPILOT_TICKET, pos, ticketLevel);
         return true;
     }
 
@@ -173,9 +246,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
             }
 
             // vanilla 路径
+            // port/1.21.10: addRegionTicket 已不存在 → ServerChunkCache.addTicket(new Ticket(type, 33), pos)
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addRegionTicket(
-                CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+            level.getChunkSource().addTicket(
+                new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -201,7 +275,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().addTicket(
+                    new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             }
 
@@ -231,7 +306,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().addTicket(
+                    new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             } catch (Throwable t2) {
                 return false;
@@ -405,7 +481,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) return map;
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            map.put(p.getUUID(), p.getGameProfile().getName());
+            map.put(p.getUUID(), p.getGameProfile().name());
         }
         return map;
     }

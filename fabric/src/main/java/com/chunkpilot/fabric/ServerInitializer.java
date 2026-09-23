@@ -205,7 +205,7 @@ public class ServerInitializer {
             MinecraftServer server = context.getSource().getServer();
             return SharedSuggestionProvider.suggest(
                 server.getPlayerList().getPlayers().stream()
-                    .map(p -> p.getGameProfile().getName()),
+                    .map(p -> p.getGameProfile().name()),
                 builder
             );
         };
@@ -304,7 +304,7 @@ public class ServerInitializer {
     private static int runMain(CommandContext<CommandSourceStack> ctx, String[] args) {
         var player = ctx.getSource().getPlayer();
         java.util.UUID execId = player != null ? player.getUUID() : null;
-        String name = player != null ? player.getGameProfile().getName() : "console";
+        String name = player != null ? player.getGameProfile().name() : "console";
         // v0.11.9: 权限判定集中在 ChunkPilotCommand (堵住 /chunkpilot 无参绕过 requires 的问题)
         String resp = ChunkPilotCommand.execute(execId, name, args, permLevel(ctx.getSource()));
         for (String line : resp.split("\n")) {

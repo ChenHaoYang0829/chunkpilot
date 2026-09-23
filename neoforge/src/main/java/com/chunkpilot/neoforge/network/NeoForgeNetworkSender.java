@@ -201,7 +201,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendConfigOverride(ClientConfigOverridePacket packet) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ConfigOverridePayload(
+            chunkpilot$clientSendToServer(new ConfigOverridePayload(
                 packet.targetFps, packet.meshingQueueSize,
                 packet.avgFrameTimeMs, packet.clientRenderEnabled));
         } catch (Exception e) {
@@ -212,9 +212,43 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendClientCapability(boolean hasCP, int protocolVersion) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
+            chunkpilot$clientSendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
         } catch (Exception e) {
             LOG.warn("Failed to send client capability: {}", e.getMessage());
         }
+    }
+
+    /**
+     * port/1.21.10: 反射调用 NeoForge 的"客户端 → 服务端"发送入口。
+     *
+     * javap 实证 (neoforge-21.10.64-universal.jar):
+     *   1.21.1/1.21.3 的 `net.neoforged.neoforge.network.PacketDistributor.sendToServer(Payload)`
+     *   **已不存在**; 现在只有 `PacketDistributor.sendToPlayer/…` (服务端用) 与
+     *   `net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(Payload, Payload...)`。
+     *
+     * 用反射而不是直接引用, 是因为本类在**专用服务端**也会被加载, 而 ClientPacketDistributor
+     * 属于 client-only 包 (NeoForge 的 RuntimeDistCleaner 会在服务端剥离), 直接引用有
+     * NoClassDefFoundError 风险。方法句柄按需缓存, 只解析一次; 解析失败静默降级
+     * (客户端功能降级, 但服务端启动/飞行不受影响)。
+     */
+    private static java.lang.reflect.Method clientSendMethod = null;
+    private static boolean clientSendResolved = false;
+
+    private static void chunkpilot$clientSendToServer(
+            net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) throws Exception {
+        if (!clientSendResolved) {
+            clientSendResolved = true;
+            try {
+                Class<?> c = Class.forName("net.neoforged.neoforge.client.network.ClientPacketDistributor");
+                clientSendMethod = c.getMethod("sendToServer",
+                    net.minecraft.network.protocol.common.custom.CustomPacketPayload.class,
+                    net.minecraft.network.protocol.common.custom.CustomPacketPayload[].class);
+            } catch (Throwable t) {
+                LOG.warn("[ChunkPilot] ClientPacketDistributor 反射失败 (客户端功能降级): {}", t.toString());
+            }
+        }
+        if (clientSendMethod == null) return;
+        clientSendMethod.invoke(null, payload,
+            new net.minecraft.network.protocol.common.custom.CustomPacketPayload[0]);
     }
 }

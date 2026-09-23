@@ -10,19 +10,20 @@ plugins {
 }
 
 ext {
-    // 版本常量
-    minecraftVersion = "1.21.1"
-    
-    // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
-    
-    // NeoForge
-    neoforgeVersion = "21.1.77"
-    
-    // Architectury
-    architecturyVersion = "13.0.8"
+    // 版本常量 —— port/1.21.10: 坐标见 /data/openclaw/chunkpilot/PORT_MATRIX.md
+    minecraftVersion = "1.21.10"
+
+    // Fabric (PORT_MATRIX 已核实: loader 0.19.5 / api 0.138.4+1.21.10)
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.138.4+1.21.10"
+    yarnMappings = "1.21.10+build.1"   // 当前未使用 (两个模块都用 officialMojangMappings)
+
+    // NeoForge —— 21.10.64 = MC 1.21.10 正式版线 (PORT_MATRIX 已核实)
+    neoforgeVersion = "21.10.64"
+
+    // Architectury —— 18.0.8+neoforge 声明支持 1.21.10 (maven 已核实存在); 本模块代码不 import architectury,
+    // 仅保持 neoforge.mods.toml 里声明的依赖可解析
+    architecturyVersion = "18.0.8"
     
     // Mod
     modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)

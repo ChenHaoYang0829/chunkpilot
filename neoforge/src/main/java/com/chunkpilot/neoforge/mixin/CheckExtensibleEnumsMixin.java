@@ -45,8 +45,28 @@ public class CheckExtensibleEnumsMixin {
             if (cls == null) return;
             Object listener = listenerField.get(this);
             Object type = typeField.get(null);
-            // finishCurrentTask is private in vanilla; call via reflection
-            Method m = listener.getClass().getMethod("finishCurrentTask", Class.forName("net.minecraft.server.network.ConfigurationTask$Type"));
+            // finishCurrentTask 是 private (javap 实证 1.21.10:
+            //   ServerConfigurationPacketListenerImpl.finishCurrentTask(ConfigurationTask$Type)V = private),
+            // 所以必须用 getDeclaredMethod + setAccessible —— 用 getMethod 会找不到 (NoSuchMethodException,
+            // 被下面 catch 吃掉 → 配置阶段任务永不结束 → 客户端卡在 configuration)。
+            // 同时向上遍历类层次, 兼容它被挪到父类的版本。
+            Method m = null;
+            Class<?> cur = listener.getClass();
+            Class<?> typeCls = Class.forName("net.minecraft.server.network.ConfigurationTask$Type");
+            while (cur != null) {
+                try {
+                    m = cur.getDeclaredMethod("finishCurrentTask", typeCls);
+                    break;
+                } catch (NoSuchMethodException ignored) {
+                    cur = cur.getSuperclass();
+                }
+            }
+            if (m == null) {
+                LOG.error("[ChunkPilot] CheckExtensibleEnumsMixin: finishCurrentTask not found on {}",
+                    listener.getClass().getName());
+                return;
+            }
+            m.setAccessible(true);
             m.invoke(listener, type);
         } catch (Exception e) {
             LOG.error("[ChunkPilot] CheckExtensibleEnumsMixin.start failed", e);

@@ -142,7 +142,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
 
         ServerPlayNetworking.registerGlobalReceiver(ClientCapabilityPayload.TYPE,
             (payload, context) -> {
-                context.player().getServer().execute(() ->
+                context.player().level().getServer().execute(() ->
                     handler.onClientCapability(context.player().getUUID(), payload.hasCP(), payload.protocol()));
             });
 
@@ -151,7 +151,7 @@ public class FabricNetworkSender implements PlatformNetworkSender {
                 var override = new ClientConfigOverridePacket(
                     payload.targetFps(), payload.meshingQueueSize(),
                     payload.avgFrameTime(), payload.renderEnabled());
-                context.player().getServer().execute(() ->
+                context.player().level().getServer().execute(() ->
                     handler.onClientConfigOverride(context.player().getUUID(), override));
             });
     }
