@@ -201,7 +201,13 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendConfigOverride(ClientConfigOverridePacket packet) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ConfigOverridePayload(
+            // 1.21.8 移植: NeoForge 把"客户端 → 服务端"的发包从
+            //   net.neoforged.neoforge.network.PacketDistributor.sendToServer(...)
+            // 搬到了 **net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(...)**
+            //   (javap 实证 neoforge-21.8.54-universal.jar:
+            //    PacketDistributor 只剩 sendToPlayer/PlayersInDimension/AllPlayers/TrackingChunk 等
+            //    **服务端→客户端**方向的方法; ClientPacketDistributor 只有 sendToServer(CustomPacketPayload, CustomPacketPayload...))
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ConfigOverridePayload(
                 packet.targetFps, packet.meshingQueueSize,
                 packet.avgFrameTimeMs, packet.clientRenderEnabled));
         } catch (Exception e) {
@@ -212,7 +218,8 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendClientCapability(boolean hasCP, int protocolVersion) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
+                new ClientCapabilityPayload(hasCP, protocolVersion));
         } catch (Exception e) {
             LOG.warn("Failed to send client capability: {}", e.getMessage());
         }

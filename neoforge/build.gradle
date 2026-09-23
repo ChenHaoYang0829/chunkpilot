@@ -84,7 +84,20 @@ sourceSets {
 // 解决方案: 禁用 remapJar + 后处理 refmap 为 Mojang 命名
 tasks.named('remapJar').configure { enabled = false }
 
-// 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
+// ===================== refmap 与 MC 版本的对应关系 (port/1.21.8 复核) =====================
+// 下面 fixRefmap 里的 refmap JSON 是**硬编码**的, 版本一换必须逐条复核。1.21.8 复核结果
+// (javap 在**运行期 jar** libraries/net/neoforged/neoforge/21.8.54/neoforge-21.8.54-server.jar
+//  上验证, 该 jar 是 Mojang official 命名 + NeoForge patch):
+//   ChunkMapMixin.updatePlayerPos → Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V   ✓ 存在
+//   ChunkMapMixin.move            → Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V             ✓ 存在
+//   PlayerChunkSenderMixin.collectChunksToSend → PlayerChunkSender;collectChunksToSend(ChunkMap;ChunkPos;)Ljava/util/List;            ✓ 存在 (仍 private)
+//   PlayerChunkSenderSendMixin.sendNextChunks   → PlayerChunkSender;sendNextChunks(ServerPlayer;)V                                    ✓ 存在
+//   ServerPlayerMixin.teleportTo  → Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V                                        ✓ 存在
+//   ⇒ **1.21.8 的 5 条 descriptor 与硬编码值完全一致, 无需改 refmap**。
+//   复核脚本: scripts-1.21.8/verify_neoforge_refmap.py <mod.jar> <runtime.jar>  (结果 OK=5 MISS=0)
+// 另: chunkpilot.mixins.json 里注册的 CheckExtensibleEnumsMixin / ConnectionNetTrackerMixin 不在
+//   refmap 里 —— 它们的目标要么是 NeoForge 自有类 (remap=false), 要么注解里已写全字面 descriptor,
+//   Mixin 查不到 refmap 条目时会直接用注解字面名 (运行期就是 Mojang 名) ⇒ 正常运行。
 tasks.register('fixRefmap') {
     doLast {
         def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")

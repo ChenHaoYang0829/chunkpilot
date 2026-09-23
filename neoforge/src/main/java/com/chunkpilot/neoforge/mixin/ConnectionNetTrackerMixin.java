@@ -21,8 +21,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // ===================== 1.21.8 移植: 目标方法签名必须跟着改 =====================
+    // javap 实证 (1.21.8 minecraft-merged / net.minecraft.network.Connection):
+    //   public void send(Packet<?>);
+    //   public void send(Packet<?>, io.netty.channel.ChannelFutureListener);
+    //   public void send(Packet<?>, io.netty.channel.ChannelFutureListener, boolean);
+    //   private void sendPacket(Packet<?>, ChannelFutureListener, boolean);
+    //   ✗ 1.21.3 的 `send(Packet, PacketSendListener, boolean)` **已被删除**
+    //     (PacketSendListener 这个类型在 1.21.6+ 的 Connection 上不再使用)。
+    // 本 mixin 归属的 chunkpilot.mixins.json 是 `required: true` + `defaultRequire: 1`,
+    // 描述符写错 ⇒ 注入失败 ⇒ **NeoForge 服务端启动直接崩** (这正是必须避免的"编译过但起不来")。
+    // 因此与 1.21.7 端口一样, 改成 ChannelFutureListener 版本。
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();

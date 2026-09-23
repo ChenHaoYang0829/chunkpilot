@@ -11,18 +11,18 @@ plugins {
 
 ext {
     // 版本常量
-    minecraftVersion = "1.21.1"
+    minecraftVersion = "1.21.8"
     
     // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.136.1+1.21.8"
+    yarnMappings = "1.21.8+build.1"
     
     // NeoForge
-    neoforgeVersion = "21.1.77"
+    neoforgeVersion = "21.8.54"
     
     // Architectury
-    architecturyVersion = "13.0.8"
+    architecturyVersion = "18.0.8"
     
     // Mod
     modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)

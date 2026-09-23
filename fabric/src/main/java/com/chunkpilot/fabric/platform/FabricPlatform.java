@@ -1,14 +1,20 @@
 package com.chunkpilot.fabric.platform;
 
 import com.chunkpilot.platform.PlatformAbstraction;
+import com.chunkpilot.fabric.mixin.ServerChunkCacheAccessor;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.Ticket;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -24,9 +30,34 @@ public class FabricPlatform implements PlatformAbstraction {
     // 玩家 UUID → ServerPlayer 缓存
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
-    public static final TicketType<ChunkPos> CHUNKPILOT_TICKET = 
-        TicketType.create("chunkpilot:forced", java.util.Comparator.comparingLong(ChunkPos::toLong), 31);
+    
+    // ===================== 1.21.8 票据系统重写 (移植必须) =====================
+    //
+    // 1.21.5+ 把票据系统整体重写, 1.21.8 的实况 (javap 实证 minecraft-merged 1.21.8):
+    //   1) `TicketType` 由"泛型 + create(name, comparator, level)"变成
+    //        public final class TicketType extends Record { long timeout; boolean persist; TicketUse use; }
+    //      且只由私有 register(String,long,boolean,TicketUse) 注册进 BuiltInRegistries.TICKET_TYPE;
+    //      旧的 `TicketType.create(String, Comparator, int)` **已被删除** → 老代码编译不过。
+    //   2) "票据等级"从 TicketType 搬到 Ticket 上:
+    //        public Ticket(TicketType, int ticketLevel)   (ticksLeft = type.timeout())
+    //   3) 加/删票入口搬家: DistanceManager 上的 addTicket/removeTicket 全部消失, 改为
+    //        public ServerChunkCache.addTicket(Ticket, ChunkPos)
+    //        public TicketStorage.addTicket/removeTicket(Ticket, ChunkPos)
+    //   4) TicketStorage.isTicketSameTypeAndLevel(Ticket,Ticket) 用 **引用比较** (if_acmpne) 比 getType(),
+    //      所以"加"和"删"必须用**同一个 TicketType 实例** —— 下面两个 static final 单例正好满足;
+    //      同时这也意味着 CP **不可能**误删原版的票 (原版用别的实例, 引用必不相等)。
+    //   5) TicketStorage 只把 `type.persist()==true` 的票写进存档 (packTickets 的 lambda 判 persist),
+    //      我们 persist=false ⇒ 未注册类型不会被 byNameCodec 序列化, 存档不会报错;
+    //      Ticket.toString() 对未注册类型走 Util.getRegisteredName() → "[unregistered]" (不抛异常)。
+    //   6) 语义映射 (旧 → 新): 旧系统用"等级"同时表达"加载深度"和"是否 tick"; 新系统把 tick 拆到
+    //      TicketUse 上 (TicketStorage.getLowestTicket(list, bl) 用 doesSimulate()/doesLoad() 过滤 ——
+    //      javap 实证)。CP 的票只负责"把前方区块提前加载/生成", 实体/方块 tick 继续交给原版 PLAYER 票,
+    //      所以两个类型都用 TicketUse.LOADING —— 与旧版"level 33 = FULL 但不参与 tick"的意图一致。
+    //      等级数值含义不变: 31 = entity-ticking 边界, 33 = FULL 生成边界, 40+ = 浅层。
+
+    // ChunkPilot 自定义 ticket 类型（等级由 new Ticket(type, level) 给; 旧版写死 31）
+    public static final TicketType CHUNKPILOT_TICKET =
+        new TicketType(TicketType.NO_TIMEOUT, false, TicketType.TicketUse.LOADING);
 
     /**
      * v0.11.5c: CP **预生成**统一使用的票据 level = 33 (= FULL 生成, 但不参与 block/entity tick)。
@@ -42,8 +73,10 @@ public class FabricPlatform implements PlatformAbstraction {
     // v0.6.0: 加 expiryTicks=200 (10s) — 浅层预生成的 chunk 必须能自动过期卸载,
     //   否则只 add 不 remove 的浅层 ticket 会让 chunk 永久驻留 (内存泄漏).
     //   玩家接近时 vanilla 的 PLAYER ticket 会重新加载并补 FULL.
-    public static final TicketType<ChunkPos> CHUNKPILOT_GEN_TICKET =
-        TicketType.create("chunkpilot:gen", java.util.Comparator.comparingLong(ChunkPos::toLong), 200);
+    // 1.21.8: "过期时间"不再是 create() 的第三个参数, 而是 TicketType 的 timeout 字段
+    //   (record 第一分量), 由 new Ticket(type, level) 拷进 Ticket.ticksLeft → 语义等价。
+    public static final TicketType CHUNKPILOT_GEN_TICKET =
+        new TicketType(200L, false, TicketType.TicketUse.LOADING);
 
     // ========== v0.9.0: CP 独占生成模式 (无 C2ME 时停掉原版生成队列) ==========
     //
@@ -203,13 +236,11 @@ public class FabricPlatform implements PlatformAbstraction {
         ServerLevel world = findWorld(server, worldId);
         if (world == null) return false;
 
-        // v0.10: 改用 addTicket (单区块) 直接指定加载等级, 支持远处浅层加载.
-        //   旧代码 addRegionTicket(..., radius=0) 恒为 FULL_TICKING (level 31),
-        //   无法表达"远处只生成地形骨架"的浅层等级.
-        //   addTicket(type, pos, level, value): level 直接决定加载深度 (31=FULL, 40≈CARVERS).
+        // v0.10: 用"单区块 + 指定等级"的票直接决定加载深度 (31=FULL_TICKING 边界, 40≈CARVERS).
+        // 1.21.8: 入口从 DistanceManager.addTicket(type,pos,level,value) 改为
+        //   ServerChunkCache.addTicket(new Ticket(type, level), pos) —— 等级现在挂在 Ticket 上。
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .addTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        world.getChunkSource().addTicket(new Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
         // v0.10.4: 标记该 chunk 有活跃 CP ticket, 让 mixin 放行其生成 (不误取消 sector 生成)
         markChunkTicketed(pos.toLong());
         return true;
@@ -222,10 +253,13 @@ public class FabricPlatform implements PlatformAbstraction {
         ServerLevel world = findWorld(server, worldId);
         if (world == null) return false;
 
-        // 与 addChunkTicket 对称: 用同一等级移除
+        // 与 addChunkTicket 对称: 用同一等级 + **同一个 TicketType 实例**移除
+        // (1.21.8 TicketStorage.isTicketSameTypeAndLevel 用引用比较 type, 见文件顶部说明)。
+        // ServerChunkCache 上只有 removeTicketWithRadius(type,pos,radius) (按类型整片删, 会误删同
+        // 一 chunk 上其它等级的 CP 票), 所以走 TicketStorage.removeTicket(Ticket, ChunkPos) 精确删。
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .removeTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        ((ServerChunkCacheAccessor) world.getChunkSource()).chunkpilot$ticketStorage()
+            .removeTicket(new Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
         // v0.10.4: 取消该 chunk 的 CP ticket 标记
         unmarkChunkTicketed(pos.toLong());
         return true;
@@ -255,6 +289,9 @@ public class FabricPlatform implements PlatformAbstraction {
             if (!fut.isDone()) return false;
             net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.LevelChunk> res =
                 fut.getNow(null);
+            // port/1.21.8 复核 (javap 实证): 1.21.8 的 ServerChunkCache 同样**没有** public
+            //   getChunkHolder(long), 原版入口就是 private getVisibleChunkIfPresent(long)
+            //   ⇒ main 这个修法在 1.21.8 上同样是必需的, 也是本版本唯一可行路径。
             return res != null && res.isSuccess() && res.orElse(null) != null;
         } catch (Throwable t) {
             return false;
@@ -308,8 +345,8 @@ public class FabricPlatform implements PlatformAbstraction {
             //    仍高于原版环状浅层依赖 (34~41) → CP 的"提前生成"收益保留;
             //    但低于玩家自身区域 (31~32) → 不再抢占玩家急需的区块.
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().chunkMap.getDistanceManager()
-                .addTicket(CHUNKPILOT_GEN_TICKET, pos, PREFETCH_TICKET_LEVEL, pos);
+            level.getChunkSource().addTicket(
+                new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -334,15 +371,14 @@ public class FabricPlatform implements PlatformAbstraction {
                 if (parsed != null) target = parsed;
             }
 
-            // v0.6.0 浅层预生成: 用 ChunkLevel.byStatus 拿精确 level, 走 DistanceManager.addTicket
-            // (非 region, 直接指定 level, 没有半径爆炸问题).
+            // v0.6.0 浅层预生成: 用 ChunkLevel.byStatus 拿精确 level, 下"单区块+指定等级"的票
+            // (非 region, 没有半径爆炸问题).
             //   byStatus(CARVERS) -> level 约 40 -> 只生成到地形骨架 (无方块实体)
-            //   byStatus(FULL)    -> level 31   -> 完整生成
+            //   byStatus(FULL)    -> level 33   -> 完整生成
             // 玩家接近时 vanilla 的 PLAYER ticket (level 更小) 会自然把 chunk 补到 FULL.
             int targetLevel = net.minecraft.server.level.ChunkLevel.byStatus(target);
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().chunkMap.getDistanceManager()
-                .addTicket(CHUNKPILOT_GEN_TICKET, pos, targetLevel, pos);
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, targetLevel), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -395,6 +431,9 @@ public class FabricPlatform implements PlatformAbstraction {
                     //   所以 probe 一直显示 ticketLevel=-1。改成**直接方法调用** (编译期 official 名,
                     //   loom 在打包时自动 remap 成运行期名)。
                     ticketLevel = holder.getTicketLevel();
+                    // port/1.21.8 (javap 实证): ChunkHolder.getCompletedLevel() **已被移除**
+                    //   (1.21.8 只剩 getTicketLevel / getFullChunkFuture), 因此 probe 的
+                    //   completedLevel 恒为 -1 —— 只影响 /chunkpilot probe 的显示, 不影响功能。
                     statusName = ChunkLevelTypeName(ticketLevel);
                 }
             } catch (Throwable ignored) {

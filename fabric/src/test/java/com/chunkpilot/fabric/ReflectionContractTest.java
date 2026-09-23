@@ -171,13 +171,20 @@ class ReflectionContractTest {
             String content = new String(bytes, StandardCharsets.UTF_8);
 
             // 验证客户端 mixin 类都被注册
+            // 1.21.8 移植: ChunkRenderDispatcherMixin 的目标类在 1.21.8 已被改名
+            //   (net.minecraft.client.renderer.chunk.ChunkRenderDispatcher → SectionRenderDispatcher,
+            //    且新类没有 updateView), 该 mixin 已**停用**并从 JSON 里移除注册
+            //   (它原本体内无任何逻辑, 停用零影响)。所以这里只期望 Sodium 那个。
             Set<String> expectedClasses = new HashSet<>(Arrays.asList(
-                "SodiumRenderSectionManagerMixin", "ChunkRenderDispatcherMixin"
+                "SodiumRenderSectionManagerMixin"
             ));
             for (String cls : expectedClasses) {
                 assertTrue(content.contains("\"" + cls + "\""),
                     "客户端 mixin JSON 未注册 " + cls);
             }
+            // 反向断言: 1.21.8 上 ChunkRenderDispatcherMixin **不应**再被注册 (目标类不存在)
+            assertFalse(content.contains("\"ChunkRenderDispatcherMixin\""),
+                "1.21.8 的 ChunkRenderDispatcher 已改名, 该 mixin 必须保持停用");
 
             // 进一步: 实际加载这些 mixin 类, 确认 classpath 上能找到
             // 注意: 注解检测可能因 @Mixin 注解类来自 spongepowered mixin jar

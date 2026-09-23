@@ -22,6 +22,20 @@ public interface ServerChunkCacheAccessor {
     Thread chunkpilot$mainThread();
 
     /**
+     * 1.21.8 移植: 票据容器搬到了 {@code TicketStorage}。
+     *
+     * javap 实证 (1.21.8 minecraft-merged):
+     *   - {@code public void ServerChunkCache.addTicket(Ticket, ChunkPos)} 还在 (加票用它);
+     *   - 但 {@code ServerChunkCache} 上**没有** public removeTicket(Ticket, ChunkPos),
+     *     只有 {@code removeTicketWithRadius(TicketType, ChunkPos, int)} (按类型整片删, 不分等级);
+     *   - 精确删除 (type + level 同时匹配) 只在 {@code TicketStorage.removeTicket(Ticket, ChunkPos)};
+     *   - {@code TicketStorage} 实例是 {@code ServerChunkCache} 的 private final 字段 ticketStorage。
+     *   ⇒ 用一个 @Accessor 拿它。
+     */
+    @Accessor("ticketStorage")
+    net.minecraft.world.level.TicketStorage chunkpilot$ticketStorage();
+
+    /**
      * 原版"取区块 future"主线程版本. 调用它会产生**必要的副作用**:
      *   - load=true 时补一张 TicketType.UNKNOWN 票;
      *   - 把生成任务排进调度器 (getOrScheduleFuture).

@@ -50,6 +50,8 @@ public class ForwardWindowController {
     private long refreshes = 0;
     private long deactivations = 0;
     private long errors = 0;
+    /** 锚点发票失败次数 (平台 addChunkTicket 返回 false / 抛异常). */
+    private long addFailures = 0;
 
     // ================= Mixin 查询接口 =================
 
@@ -166,12 +168,34 @@ public class ForwardWindowController {
             }
 
             if (wantAnchor) {
-                if (!platform.addChunkTicket(worldId, anchorX, anchorZ, newLevel)) {
-                    // 平台未能发票 (玩家已离线等) → 不要留下假状态
+                boolean ticketOk;
+                try {
+                    ticketOk = platform.addChunkTicket(worldId, anchorX, anchorZ, newLevel);
+                } catch (Throwable t) {
+                    ticketOk = false;
+                }
+                if (!ticketOk) {
+                    // 平台未能发票 (玩家已离线 / 平台实现拒绝) → 不要留下假状态。
+                    // 2026-09-24 (port/1.21.8): 这里原来**完全静默** —— 一旦平台的 addChunkTicket
+                    // 因为版本 API 变化而恒返回 false, 前瞻窗口就整体失效却没有任何日志线索
+                    // (1.21.8 首轮移植排查时正是这种情况最难定位). 现在低频留痕。
+                    addFailures++;
+                    if (addFailures <= 3 || addFailures % 600 == 0) {
+                        LOG.warn("[ChunkPilot] 前瞻窗口: 锚点发票失败 (#{}), world={} anchor=({},{}) level={}"
+                                + " → 本 tick 不做窗口前移 (检查平台 addChunkTicket)",
+                            addFailures, worldId, anchorX, anchorZ, newLevel);
+                    }
                     deactivate(playerId, platform);
                     return;
                 }
-                if (prev == null) activations++;
+                if (prev == null) {
+                    activations++;
+                    if (activations <= 3 || activations % 200 == 0) {
+                        LOG.info("[ChunkPilot] 前瞻窗口激活 #{}: 锚点=({},{}) level={} 窗口前移=({},{}) vd={} v={}b/t",
+                            activations, anchorX, anchorZ, newLevel, shiftX, shiftZ,
+                            viewDistance, String.format("%.2f", speedBps));
+                    }
+                }
             }
             publishShift(playerId, shiftX, shiftZ);
             states.put(playerId, new WinState(worldId, anchorX, anchorZ, newLevel,

@@ -6,8 +6,7 @@
   "refmap": "chunkpilot.client.refmap.json",
   "mixins": [],
   "client": [
-    "SodiumRenderSectionManagerMixin",
-    "ChunkRenderDispatcherMixin"
+    "SodiumRenderSectionManagerMixin"
   ],
   "injectors": {
     "defaultRequire": 1
