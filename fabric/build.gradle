@@ -82,3 +82,12 @@ test {
 // 2026-08-01: 1.21.2 fabric-api 拆分了 client 模块, 显式加 client networking
 dependencies {
 }
+
+// 2026-09-24: 让元数据里的 MC 版本从构建变量展开, 而不是手写 ——
+//   手写极容易漏改(实测出现过"1.21.5 的 jar 里写着 minecraft=1.21.3"⇒ 在 1.21.5 上被 loader 直接拒绝加载)。
+processResources {
+    inputs.property "mcVersion", fabMC
+    filesMatching("fabric.mod.json") {
+        expand(mcVersion: fabMC)
+    }
+}

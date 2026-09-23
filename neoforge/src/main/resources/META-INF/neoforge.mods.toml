@@ -22,7 +22,7 @@ side = "BOTH"
 [[dependencies.chunkpilot]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.1,1.22)"
+versionRange = "${mcRange}"
 ordering = "NONE"
 side = "BOTH"
 
