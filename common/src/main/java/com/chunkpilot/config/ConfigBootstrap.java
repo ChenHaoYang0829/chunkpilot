@@ -90,7 +90,12 @@ public final class ConfigBootstrap {
             if (parent != null) Files.createDirectories(parent);
             Files.write(target, bytes);
 
-            LOG.info(I18n.tr("chunkpilot.log.config_released", target.toString()));
+            // ⚠ 必须显式转成 Object: I18n 有两个重载 —— tr(String key, Object... args) 与
+            //   tr(String lang, String key, Object... args)。传两个 String 实参时 Java 会选**后者**,
+            //   于是把文件路径当成"语言代码"、把路径当成"key" ⇒ 日志里会出现
+            //   "language file not found or empty: chunkpilot.log.config_released" 与
+            //   "missing key: config/chunkpilot.toml" 两条误导性警告(1.21.9 负责人实测发现)。
+            LOG.info(I18n.tr("chunkpilot.log.config_released", (Object) target.toString()));
             return target;
         } catch (Throwable t) {
             // 释放失败绝不能影响启动: 没配置文件时一切按代码默认值走
