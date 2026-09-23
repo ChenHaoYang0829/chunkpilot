@@ -7,8 +7,9 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
 
     // 2026-08-01: common 源码不含 MC 直接类型引用 (用 PlatformAbstraction 抽象层)
-    // 但 loom 编译需要 MC, 这里给 fabric 的 1.21.2
-    minecraft "com.mojang:minecraft:1.21.2"
+    // port/1.21.5: 原来硬编码 1.21.2 → 改为跟随 rootProject.minecraftVersion (1.21.5),
+    // 否则构建 :common 会额外拉/remap 一整套 1.21.2 映射 (实测每次构建多花 10+ 分钟).
+    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
     mappings loom.officialMojangMappings()
 
     // P0: 单元测试 — common 模块零 MC 引用, 测试也只用 JUnit + chunkpilot.* 类

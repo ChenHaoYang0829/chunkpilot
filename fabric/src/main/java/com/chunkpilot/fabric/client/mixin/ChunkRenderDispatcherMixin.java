@@ -13,6 +13,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 用 CP 权重重新排序待 meshing 的区块队列.
  *
  * 使用字符串目标避免编译时需要客户端类 (Architectury Loom main sourceSet 不含客户端 mappings).
+
+ * ============================ port/1.21.5: 已停用 (不注册进 mixins.json) ============================
+ * 1.21.5 把 `net.minecraft.client.renderer.chunk.ChunkRenderDispatcher` 改名成了
+ * `net.minecraft.client.renderer.chunk.SectionRenderDispatcher` (javap/zip 实证:
+ * 1.21.5 的 minecraft-merged 里已经没有 ChunkRenderDispatcher, 只有 SectionRenderDispatcher)。
+ * 本 mixin 的方法体是**空实现**(仅"Vanilla 路径标记点"), 停用不损失任何功能,
+ * 因此按 AGENT_BRIEF §3 的做法: 从 chunkpilot.client.mixins.json 取消注册 (而不是硬凑目标),
+ * 保证客户端/服务端都能正常启动。若将来要恢复, 需按 SectionRenderDispatcher.updateView 的新签名重写。
  */
 @Mixin(targets = "net.minecraft.client.renderer.chunk.ChunkRenderDispatcher", remap = true)
 public class ChunkRenderDispatcherMixin {

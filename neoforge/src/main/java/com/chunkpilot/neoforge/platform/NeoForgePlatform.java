@@ -4,6 +4,7 @@ import com.chunkpilot.platform.PlatformAbstraction;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.Ticket;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -28,13 +29,47 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
-    public static final TicketType<ChunkPos> CHUNKPILOT_TICKET =
-        TicketType.create("chunkpilot:forced", Comparator.comparingLong(ChunkPos::toLong), 31);
+    // ==== port/1.21.5: ticket 体系重写 (javap 实证; 与 1.21.1 的 API 完全不同) ====
+    //   * `TicketType` 变成 record(long timeout, boolean persist, TicketUse use); 泛型消失;
+    //   * 等级不再属于 TicketType, 而是 `new Ticket(type, level)` 时给出;
+    //   * `DistanceManager` 上已无 addTicket/removeTicket; `ServerChunkCache.addRegionTicket` 也没了.
+    //   ⇒ 加票: ServerChunkCache.addTicket(Ticket, ChunkPos)  (public)
+    //     退票: ServerChunkCache.removeTicketWithRadius(type, pos, radius) (public),
+    //           内部按 (type, level) 精确匹配 ⇒ radius = 33 - level 就是"精确退掉该等级的票".
+    //   ⚠ 1.21.1/1.21.3 里 `TicketType.create(name, comparator, N)` 的 N 是 **timeout(ticks)** 不是 level,
+    //     这里沿用原数值 (sector 31 tick), 只把承载 level 的位置搬到 Ticket.
+    public static final TicketType CHUNKPILOT_TICKET =
+        new TicketType(31L, false, TicketType.TicketUse.LOADING_AND_SIMULATION);
 
-    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成)
-    public static final TicketType<ChunkPos> CHUNKPILOT_GEN_TICKET =
-        TicketType.create("chunkpilot:gen", Comparator.comparingLong(ChunkPos::toLong), 31);
+    /**
+     * CP 预生成统一使用的票据 level = 33 (= FULL 生成, 但不参与 block/entity tick).
+     *
+     * 1.21.1/1.21.3 时 neoforge 侧用的是 `addRegionTicket(type, pos, 31, pos)`(radius 语义),
+     * 该 API 在 1.21.5 已被删除; 重写时与 **fabric 侧实测过的 v0.11.5c 设计对齐**:
+     * level=33 仍高于原版环状浅层依赖 (34~41) → 保留"提前生成"收益,
+     * 但低于玩家自身区域 (31~32) → 不抢占玩家急需的区块.
+     */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
+    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成; timeout 200 tick = 10s 自动过期)
+    public static final TicketType CHUNKPILOT_GEN_TICKET =
+        new TicketType(200L, false, TicketType.TicketUse.LOADING_AND_SIMULATION);
+
+    /** 1.21.5: FULL 票级 (33) —— 退票时用它把 level 换算成 removeTicketWithRadius 的 radius. */
+    private static int cpFullChunkLevel() {
+        return net.minecraft.server.level.ChunkLevel.byStatus(
+            net.minecraft.server.level.FullChunkStatus.FULL);
+    }
+
+    /** 1.21.5: 精确加一张指定等级的 CP 票. */
+    private static void cpAddTicket(ServerLevel world, ChunkPos pos, TicketType type, int level) {
+        world.getChunkSource().addTicket(new Ticket(type, level), pos);
+    }
+
+    /** 1.21.5: 精确退掉该等级的 CP 票. */
+    private static void cpRemoveTicket(ServerLevel world, ChunkPos pos, TicketType type, int level) {
+        world.getChunkSource().removeTicketWithRadius(type, pos, cpFullChunkLevel() - level);
+    }
 
     // C2ME 兼容: 检测 C2ME 是否加载
     private Boolean c2meCached = null;
@@ -117,8 +152,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
         // v0.10: 改用 addTicket (单区块) 直接指定加载等级, 支持远处浅层加载.
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .addTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        cpAddTicket(world, pos, CHUNKPILOT_TICKET, ticketLevel);
         return true;
     }
 
@@ -130,8 +164,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         if (world == null) return false;
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .removeTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        cpRemoveTicket(world, pos, CHUNKPILOT_TICKET, ticketLevel);
         return true;
     }
 
@@ -172,10 +205,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
                 return requestChunkAsyncC2ME(level, chunkX, chunkZ);
             }
 
-            // vanilla 路径
+            // vanilla 路径 (1.21.5: addRegionTicket 已不存在 → 走 Ticket + addTicket)
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addRegionTicket(
-                CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+            cpAddTicket(level, pos, CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL);
             return true;
         } catch (Throwable t) {
             return false;
@@ -201,7 +233,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                cpAddTicket(level, pos, CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL);
                 return true;
             }
 
@@ -231,7 +263,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                cpAddTicket(level, pos, CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL);
                 return true;
             } catch (Throwable t2) {
                 return false;

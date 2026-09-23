@@ -4,9 +4,9 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabMC = "1.21.5"
+def fabLoader = "0.19.5"
+def fabApi = "0.128.2+1.21.5"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }
@@ -23,7 +23,8 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
     // 2026-08-01: 1.21.2 需要显式加 fabric-networking-api-v1 (含 ClientPlayNetworking)
-    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:4.3.3+56ec7ac673"
+    // port/1.21.5: 版本号随 fabric-api 0.128.2+1.21.5 的 pom 对齐 (4.5.0+775be32c49)
+    modImplementation "net.fabricmc.fabric-api:fabric-networking-api-v1:4.5.0+775be32c49"
 
     // P1.1: 静态反射检查 — fabric 测试也要 JUnit
     testImplementation platform('org.junit:junit-bom:5.10.2')

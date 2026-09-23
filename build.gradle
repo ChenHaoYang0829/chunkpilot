@@ -10,19 +10,19 @@ plugins {
 }
 
 ext {
-    // 版本常量
-    minecraftVersion = "1.21.1"
-    
-    // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
-    
-    // NeoForge
-    neoforgeVersion = "21.1.77"
-    
-    // Architectury
-    architecturyVersion = "13.0.8"
+    // 版本常量 —— port/1.21.5: 两个模块统一到 MC 1.21.5
+    minecraftVersion = "1.21.5"
+
+    // Fabric (PORT_MATRIX 已核实: loader 0.19.5 / api 0.128.2+1.21.5)
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.128.2+1.21.5"
+    yarnMappings = "1.21.5+build.1"   // 当前未使用 (fabric 模块用 officialMojangMappings)
+
+    // NeoForge —— 21.5.x 是 MC 1.21.5 的对应线, 21.5.98 = PORT_MATRIX 已核实
+    neoforgeVersion = "21.5.98"
+
+    // Architectury —— 16.1.4 的 mods.toml 声明 minecraft [1.21.4,) / neoforge [21.0.110-beta,) ⇒ 1.21.5 可用
+    architecturyVersion = "16.1.4"
     
     // Mod
     modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)

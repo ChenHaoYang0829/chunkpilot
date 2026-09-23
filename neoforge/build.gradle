@@ -25,20 +25,21 @@ architectury {
 dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
-    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
+    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 曾无法自动解析）
+    // port/1.21.5: 版本按 neoforge-21.5.98.pom 对齐 (FML 7.0.13 / bus 8.0.5)
+    implementation "net.neoforged.fancymodloader:loader:7.0.13"
+    implementation "net.neoforged.fancymodloader:earlydisplay:7.0.13"
+    implementation "net.neoforged:bus:8.0.5"
 
     // Architectury
     modImplementation "dev.architectury:architectury-neoforge:${rootProject.architecturyVersion}"
 
-    // Mixin 注解
-    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.4.1"
-    implementation "io.github.llamalad7:mixinextras-neoforge:0.4.1"
+    // Mixin 注解 (neoforge 21.5.98 自带 mixinextras 0.5.3)
+    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.5.3"
+    implementation "io.github.llamalad7:mixinextras-neoforge:0.5.3"
 
-    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径; 21.5.98 = 0.15.2+mixin.0.8.7）
+    implementation "net.fabricmc:sponge-mixin:0.15.2+mixin.0.8.7"
 
     // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
