@@ -4,7 +4,8 @@ import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.config.GenerationConfig;
 import com.chunkpilot.fabric.platform.FabricPlatform;
 import net.minecraft.server.level.ChunkMap;
-import net.minecraft.server.level.ChunkTaskDispatcher;
+import net.minecraft.server.level.ChunkTaskPriorityQueueSorter;
+import net.minecraft.server.level.GenerationChunkHolder;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -26,27 +27,49 @@ import java.util.function.IntSupplier;
  *    所以任一邻域 chunk 的生成任务被丢掉 -> 玩家自己的 chunk 永远升不到 FULL
  *    -> 主线程 Entity.tick -> getEntities -> getChunk 永久等待 -> watchdog 杀服.
  *
- * 2) runGenerationTask 只是把任务提交给 worldgenTaskDispatcher;
+ * 2) runGenerationTask 只是把任务提交给 worldgen 调度器;
  *    ci.cancel() 丢掉的是唯一一次提交, 但 GenerationChunkHolder 的 task 字段仍指向该任务
  *    (没人调用 removeTask / releaseClaim) -> 该 chunk 之后即使被重新请求,
  *    scheduleChunkGenerationTask 也会因 (task != null 且 status 不比 task.targetStatus 更深) 拒绝重排
  *    -> 永久卡死, 同时它 17x17 StaticCache2D 的 claim 永不释放 (崩溃时 W:1767).
  *
- * 结论: 1.21.3 上"取消原版生成任务"这条路走不通, 只能改调度顺序.
+ * 结论: "取消原版生成任务"这条路走不通, 只能改调度顺序.
  *
  * ============================ 现在的做法 ============================
- * 拦截 ChunkMap.runGenerationTask 里对 ChunkTaskDispatcher.submit 的调用,
- * 对 CP 请求/持票的 chunk 包一层 IntSupplier, 把投递优先级 (level) 压到 CP_PRIORITY_CAP.
+ * 对 CP 请求/持票的 chunk, 把投递到 worldgen 优先级队列的 **排序 level** 压到 CP_PRIORITY_CAP:
  *   - 优先级只在 ChunkTaskPriorityQueue 内部用于排序 (低 level 先做), 不影响正确性;
  *   - 任务一个都不丢, 5x5 依赖链完整 -> 不会再死锁;
- *   - 上限 31 = 玩家所在 chunk 的 level, CP 前方 chunk 因此排在原版环状浅层依赖 (32~41) 之前,
+ *   - 上限 33 = FULL 的 level, CP 前方 chunk 因此排在原版环状浅层依赖 (34~41) 之前,
  *     但不会插到玩家自身区块前面 (避免玩家所在区块被饿死).
  *
- * 1.21.3 official 映射 (javap 实证):
- *   ChunkMap.runGenerationTask(ChunkGenerationTask) -> void
- *     -> worldgenTaskDispatcher.submit(Runnable, long chunkPos, IntSupplier level)
- *   ChunkTaskDispatcher.submit(Runnable, long, IntSupplier) -> void
- *   ChunkGenerationTask.targetStatus : public final ChunkStatus
+ * ============================ port/1.21.1: 等价替换 (必须改) ============================
+ * **1.21.1 没有 `net.minecraft.server.level.ChunkTaskDispatcher`**(1.21.2 才引入的新 chunk
+ * 生成管线). javap 实证 (1.21.1 minecraft-merged, official mappings):
+ *
+ *   ChunkMap.runGenerationTask(ChunkGenerationTask):
+ *     0: aload_1
+ *     1: invokevirtual ChunkGenerationTask.getCenter:()Lnet/minecraft/server/level/GenerationChunkHolder;
+ *     5: aload_0
+ *     6: getfield  ChunkMap.worldgenMailbox:Lnet/minecraft/util/thread/ProcessorHandle;
+ *    10: <lambda: ChunkMap::method_xxx(task)>
+ *    15: invokestatic ChunkTaskPriorityQueueSorter.message:(LGenerationChunkHolder;Ljava/lang/Runnable;)LChunkTaskPriorityQueueSorter$Message;
+ *    18: invokeinterface ProcessorHandle.tell:(Ljava/lang/Object;)V
+ *
+ * 且 `ChunkTaskPriorityQueueSorter.message(GenerationChunkHolder, Runnable)` 的内部实现是
+ * (javap -c, BootstrapMethod #3 实证):
+ *     message(runnable, holder.getPos().toLong(), holder::getQueueLevel)   // ← IntSupplier
+ * 而 1.21.3 的 `ChunkTaskDispatcher.submit(runnable, chunkPos, IntSupplier)` 用的是
+ * `GenerationChunkHolder::getTicketLevel`, 两者语义一致 (都是"越低越先做"的排序键).
+ *
+ * 所以 1.21.1 的**等价拦截点**是: 把 runGenerationTask 里对
+ * `ChunkTaskPriorityQueueSorter.message(holder, runnable)` 的调用重定向成对
+ * `ChunkTaskPriorityQueueSorter.message(Runnable, long, IntSupplier)` 的调用,
+ * 并把 IntSupplier 换成 `min(holder.getQueueLevel(), 33)`。
+ * 优先级效果与 1.21.3 完全一致, 且没有丢掉任何一个生成任务。
+ *
+ * 1.21.3 -> 1.21.1 的映射变化: `ChunkTaskDispatcher.submit(Runnable,long,IntSupplier)`
+ *   → `ChunkTaskPriorityQueueSorter.message(Runnable,long,IntSupplier)`;
+ *   排序键 `getTicketLevel()` → `getQueueLevel()` (1.21.1 的排序键就是 queueLevel).
  */
 @Mixin(ChunkMap.class)
 public abstract class ChunkMapGenerationMixin {
@@ -67,21 +90,31 @@ public abstract class ChunkMapGenerationMixin {
     private static final AtomicLong cpNormal = new AtomicLong();
     private static final AtomicLong cpLastLog = new AtomicLong();
 
+    /**
+     * 1.21.1 版: 重定向 worldgen 消息构造, 只换排序 level, 任务原样投递.
+     *
+     * 原调用点 (1.21.1 official mappings):
+     *   ChunkTaskPriorityQueueSorter.message(GenerationChunkHolder, Runnable) : Message
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
     @Redirect(
         method = "runGenerationTask",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/server/level/ChunkTaskDispatcher;submit(Ljava/lang/Runnable;JLjava/util/function/IntSupplier;)V"
+            target = "Lnet/minecraft/server/level/ChunkTaskPriorityQueueSorter;message(Lnet/minecraft/server/level/GenerationChunkHolder;Ljava/lang/Runnable;)Lnet/minecraft/server/level/ChunkTaskPriorityQueueSorter$Message;"
         )
     )
-    private void chunkpilot$submitWithCpPriority(ChunkTaskDispatcher dispatcher, Runnable runnable,
-                                                 long chunkPosLong, IntSupplier level) {
-        IntSupplier effective = level;
+    private ChunkTaskPriorityQueueSorter.Message chunkpilot$submitWithCpPriority(
+            GenerationChunkHolder holder, Runnable runnable) {
+        // 原版排序键: holder.getQueueLevel() (1.21.1 ChunkTaskPriorityQueueSorter.message 内部使用)
+        IntSupplier base = holder::getQueueLevel;
+        IntSupplier effective = base;
+        long chunkPosLong = holder.getPos().toLong();
         try {
             if (chunkpilot$shouldPrioritize(chunkPosLong)) {
-                final IntSupplier base = level;
-                // 只包一层, 不改变任务本身; 排序 key 取 min(原 level, 31)
-                effective = () -> Math.min(base.getAsInt(), CP_PRIORITY_CAP);
+                final IntSupplier b = base;
+                // 只换排序键, 不改变任务本身; 排序 key 取 min(原 level, 33)
+                effective = () -> Math.min(b.getAsInt(), CP_PRIORITY_CAP);
                 long n = cpBoosted.incrementAndGet();
                 if (n == 1) {
                     log("CP 独占生成: 开始对 CP 请求区块提优先级 (cap=" + CP_PRIORITY_CAP + ")");
@@ -91,9 +124,10 @@ public abstract class ChunkMapGenerationMixin {
             }
             chunkpilot$maybeLogSummary();
         } catch (Throwable t) {
-            effective = level; // 任何异常都不影响原版提交
+            effective = base; // 任何异常都不影响原版提交
         }
-        dispatcher.submit(runnable, chunkPosLong, effective);
+        // 与原版 message(holder, runnable) 完全等价, 唯一差别是 level 供应商被钳制
+        return ChunkTaskPriorityQueueSorter.message(runnable, chunkPosLong, effective);
     }
 
     /** CP 请求集合 / CP 持票集合里的 chunk 才提优先级. */

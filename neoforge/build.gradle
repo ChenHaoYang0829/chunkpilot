@@ -44,6 +44,8 @@ dependencies {
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
     // 拖进构建图, 而 common 关掉了 jar (jar.enabled=false), 该任务必然失败,
     // 导致整个 :neoforge:build 崩掉 (2026-09-20 实测: 唯一失败任务就是它)。
+    // port/1.21.1 (2026-09-24): 本分支在这条修复并入 main 之前独立复现过同一个崩溃, 现已与 main 一致。
+    // implementation project(':common')
 
     // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
     minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"

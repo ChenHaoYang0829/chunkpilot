@@ -4,9 +4,10 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
+// port/1.21.1: fabric 模块从 1.21.3 降到 1.21.1 (mappings/loader/fabric-api 全部换版本)
+def fabMC = "1.21.1"
 def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabApi = "0.116.13+1.21.1"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }
@@ -25,6 +26,8 @@ dependencies {
     // 2026-09-24 死代码盘点: 这行显式 pin 是多余的 —— fabric-api 聚合包已包含 networking-api-v1,
     //   且该 pin 的版本 (4.3.3) 与 fabric-api 版本不一致, 注释"1.21.2 需要"也已过时 (模块早已是 1.21.3)。
     //   实测删除后 :fabric:build 仍 BUILD SUCCESSFUL。networking 能力本身由 fabric-api 提供, 不受影响。
+    // port/1.21.1 补充: 1.21.1 的 fabric-api 更是"全模块 fat jar"(客户端模块化拆分是 1.21.2 才做的),
+    //   ClientPlayNetworking 一定在里面。**两条理由同向** → 本分支同样删除这行 pin。
 
     // P1.1: 静态反射检查 — fabric 测试也要 JUnit
     testImplementation platform('org.junit:junit-bom:5.10.2')

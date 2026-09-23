@@ -14,7 +14,7 @@ ext {
     minecraftVersion = "1.21.1"
     
     // Fabric
-    fabricLoaderVersion = "0.16.9"
+    fabricLoaderVersion = "0.19.3"   // port/1.21.1: 与实测运行时一致(C2ME 1.21.1 要求 >=0.18.3); 交付 jar 只声明 fabricloader>=0.15.11
     fabricApiVersion = "0.116.13+1.21.1"
     yarnMappings = "1.21.1+build.3"
     
