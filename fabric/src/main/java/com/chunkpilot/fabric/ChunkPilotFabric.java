@@ -23,7 +23,6 @@ public class ChunkPilotFabric implements ModInitializer {
         LOGGER.info("ChunkPilot initializing on Fabric...");
 
         // 检测环境: 只在服务端初始化核心逻辑
-        String envType = System.getProperty("fabric.game.version", "");
         // fabric loader 设置的环境类型
         boolean isClient = net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getEnvironmentType() == net.fabricmc.api.EnvType.CLIENT;

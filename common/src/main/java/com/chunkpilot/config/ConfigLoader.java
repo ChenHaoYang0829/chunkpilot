@@ -46,8 +46,6 @@ public class ConfigLoader {
                 multiLineBuf.append(line);
                 if (line.contains("]")) {
                     String fullValue = multiLineBuf.toString();
-                    // 提取出上一行的 key
-                    String prevRaw = multiLineBuf.toString();
                     // 需要从原始上下文取 key：但简单起见，我们把 key 在 multiLineBuf 外记录
                     // 这里重新设计：使用一个专用变量存储 multiLine key
                     // 简单做法：重新收集 — 补一个独立字段
