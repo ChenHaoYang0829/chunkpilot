@@ -73,6 +73,12 @@ maxMemoryPercent = 75
 ticketExpiryTicks = 100
 autoLiteMode = true
 liteModeRadius = 6
+# v0.11.6 非阻塞开关组 (原本只存在于解析器里, 模板漏了, 这里补齐)
+nonBlockingCollision = true
+nonBlockingReads = false
+nonBlockingGetChunk = false
+# v0.11.10 NeoForge 专用: 卸载区块时"磁盘上是否已有完整区块"的检查不再阻塞主线程
+nonBlockingUnloadCheck = true
 # v0.10: 扇形 ticket 硬上限提到 100 (给自适应档位留空间); 每 tick 新增限 4 (压 worldgen 灌量)
 maxSectorTickets = 100
 maxNewTicketsPerTick = 2

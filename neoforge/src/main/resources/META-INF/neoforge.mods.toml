@@ -5,7 +5,9 @@ issueTrackerURL = ""
 
 [[mods]]
 modId = "chunkpilot"
-version = "0.5.0-alpha"
+# port/1.21.3: 原来是 0.5.0-alpha (陈旧), 与 rootProject.modVersion / fabric.mod.json 的
+#   0.10.10-alpha 不一致 —— 统一成同一个版本号
+version = "0.10.10-alpha"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''
@@ -15,21 +17,23 @@ Smart chunk loading and rendering optimization for high-speed travel (elytra, tr
 [[dependencies.chunkpilot]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
+# port/1.21.3: 21.3.x 是 MC 1.21.3 的 NeoForge 线
+versionRange = "[21.3,)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.chunkpilot]]
 modId = "minecraft"
 type = "required"
-versionRange = "[1.21.1,1.22)"
+versionRange = "[1.21.3,1.21.4)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies.chunkpilot]]
 modId = "architectury"
 type = "required"
-versionRange = "[13.0.0,)"
+# port/1.21.3: architectury 14.0.x = 1.21.2/1.21.3 一代
+versionRange = "[14.0.0,)"
 ordering = "NONE"
 side = "BOTH"
 

@@ -10,20 +10,21 @@ plugins {
 }
 
 ext {
-    // 版本常量
-    minecraftVersion = "1.21.1"
-    
+    // 版本常量 —— port/1.21.3: 两个模块统一到 MC 1.21.3
+    // (fabric/build.gradle 从这些变量取值, 不再各自硬编码)
+    minecraftVersion = "1.21.3"
+
     // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
-    
-    // NeoForge
-    neoforgeVersion = "21.1.77"
-    
-    // Architectury
-    architecturyVersion = "13.0.8"
-    
+    fabricLoaderVersion = "0.19.3"
+    fabricApiVersion = "0.114.1+1.21.3"
+    yarnMappings = "1.21.3+build.2"
+
+    // NeoForge —— 21.3.x 是 MC 1.21.3 的对应线, 21.3.97 = maven-metadata 里最高的 21.3 稳定版
+    neoforgeVersion = "21.3.97"
+
+    // Architectury —— 14.0.x 是 1.21.2/1.21.3 一代 (13.x=1.21.1, 15.x=1.21.4)
+    architecturyVersion = "14.0.4"
+
     // Mod
     modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
     modGroup = "com.chunkpilot"

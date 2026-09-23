@@ -1,14 +1,22 @@
 repositories {
     maven { url = file("../.local-maven-repo") }
+    // port/1.21.3 (移植必须): root build.gradle 的 subprojects.repositories 里**没有**
+    // maven.neoforged.net —— 之前靠 .local-maven-repo 放几个手抄 jar 兜底 (而且那只在
+    // main 工作区里, 是未跟踪目录, worktree 根本没有), 于是 cpw.mods:modlauncher 直接解析失败:
+    //   "Could not find cpw.mods:modlauncher:11.0.4 ... no maven.neoforged.net in the search list"
+    // 实测 (走 HTTP 代理) maven.neoforged.net 上 modlauncher 11.0.4 / securejarhandler 3.0.8 /
+    // bus 8.0.5 / coremods 7.0.3 / accesstransformers 11.0.1 / mergetool 2.0.0 / JarJar* 0.4.1 /
+    // bootstraplauncher 2.0.2 / fancymodloader 5.0.8 / mixinextras-neoforge 0.5.3 全部 200 OK。
+    maven { url "https://maven.neoforged.net/releases/" }
 }
 
 configurations.all {
     resolutionStrategy.eachDependency { details ->
-        // 本地仓库有 11.0.4 但 loader 要求 11.0.3，强制用 11.0.4
+        // 对齐 neoforge-21.3.97.pom 自己声明的版本 (FML loader 5.0.8 只要求 11.0.3 / 3.0.7,
+        // 但 NeoForge 21.3.97 runtime 带的是 11.0.4 / 3.0.8, 编译期跟上避免签名不一致)
         if (details.requested.group == 'cpw.mods' && details.requested.name == 'modlauncher') {
             details.useVersion '11.0.4'
         }
-        // 本地仓库有 3.0.8 但 loader 要求 3.0.7，强制用 3.0.8
         if (details.requested.group == 'cpw.mods' && details.requested.name == 'securejarhandler') {
             details.useVersion '3.0.8'
         }
@@ -26,24 +34,32 @@ dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
     // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
+    // port/1.21.3: 版本按 neoforge-21.3.97.pom 的实际依赖更新
+    //   (21.1.77 时是 loader/earlydisplay 4.0.31 + bus 8.0.2)
+    implementation "net.neoforged.fancymodloader:loader:5.0.8"
+    implementation "net.neoforged.fancymodloader:earlydisplay:5.0.8"
+    implementation "net.neoforged:bus:8.0.5"
 
     // Architectury
     modImplementation "dev.architectury:architectury-neoforge:${rootProject.architecturyVersion}"
 
-    // Mixin 注解
-    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.4.1"
-    implementation "io.github.llamalad7:mixinextras-neoforge:0.4.1"
+    // Mixin 注解 —— 21.3.97 自带 mixinextras 0.5.3
+    annotationProcessor "io.github.llamalad7:mixinextras-neoforge:0.5.3"
+    implementation "io.github.llamalad7:mixinextras-neoforge:0.5.3"
 
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    // 21.3.97 声明的是 0.15.2+mixin.0.8.7
+    implementation "net.fabricmc:sponge-mixin:0.15.2+mixin.0.8.7"
 
-    // 引用 common 模块源码
-    implementation project(':common')
+    // 引用 common 模块源码 (由下面的 sourceSets 直接加 srcDir; 不需要 project 依赖)
+    // port/1.21.3 (移植必须): 这里原来还有一行 `implementation project(':common')`,
+    //   而 common/build.gradle 里 `jar.enabled = false` (common 只提供源码) ——
+    //   project 依赖于是把 :common:jar / :common:remapJar 拖进 :neoforge:build 的图里,
+    //   remapJar 因 devlibs/common-*.jar 不存在而直接报
+    //   "Input file does not exist ... common-<ver>-dev.jar", :neoforge:build 永远失败。
+    //   删掉后与 fabric 模块写法一致 (fabric 本来就只有 sourceSets srcDir, 没有 project 依赖)。
 
-    // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
+    // port/1.21.3: neoforge 用 MC 1.21.3 + mojang official (runtime 也是 mojmap)
     minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
     mappings loom.officialMojangMappings()
 }
@@ -110,6 +126,9 @@ tasks.register('fixRefmap') {
     },
     "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
       "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
+    },
+    "com/chunkpilot/neoforge/mixin/ChunkMapNonBlockingUnloadMixin": {
+      "isExistingChunkFull": "Lnet/minecraft/server/level/ChunkMap;isExistingChunkFull(Lnet/minecraft/world/level/ChunkPos;)Z"
     }
   }
 }

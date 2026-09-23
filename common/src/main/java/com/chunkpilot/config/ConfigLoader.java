@@ -144,7 +144,13 @@ public class ConfigLoader {
             + ", speedTiers=" + config.speedTiers.size()
             + ", structures=" + config.interestingStructures.size()
             + ", integrationEnabled=" + config.integrationEnabled
-            + ", generation.enabled=" + config.generation.enabled);
+            + ", generation.enabled=" + config.generation.enabled
+            // v0.11.10: 把非阻塞开关族一起打出来 —— 否则"配置里写了 true/false 到底有没有被解析到"
+            //   只能靠猜 (ConfigLoader 是手写解析器, 模板/解析器不一致是历史高发区)
+            + ", nonBlocking=[collision=" + config.nonBlockingCollision
+            + " reads=" + config.nonBlockingReads
+            + " getChunk=" + config.nonBlockingGetChunk
+            + " unloadCheck=" + config.nonBlockingUnloadCheck + "]");
     }
 
     // 多行解析状态字段
@@ -232,6 +238,7 @@ public class ConfigLoader {
                         case "nonBlockingCollision" -> cfg.nonBlockingCollision = parseBool(value);
                         case "nonBlockingReads" -> cfg.nonBlockingReads = parseBool(value);
                         case "nonBlockingGetChunk" -> cfg.nonBlockingGetChunk = parseBool(value);
+                        case "nonBlockingUnloadCheck" -> cfg.nonBlockingUnloadCheck = parseBool(value);
                         case "maxSectorTickets" -> cfg.maxSectorTickets = parseInt(value);
                         case "maxNewTicketsPerTick" -> cfg.maxNewTicketsPerTick = parseInt(value);
                         // v0.11.x: 扇区浅层半径/状态 (同样是"代码读、解析器没接"的键, 2026-09-13 补上)

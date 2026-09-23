@@ -94,6 +94,37 @@ public class ChunkPilotConfig {
      */
     public boolean nonBlockingGetChunk = false;
 
+    /**
+     * v0.11.10 非阻塞"磁盘上是否已有完整区块"检查 —— 专治 **NeoForge** 的
+     * `Server Watchdog: A single server tick took 60.00 seconds` 崩服 (1.21.3 实测).
+     *
+     * 阻塞点在原版 `ChunkMap.isExistingChunkFull` (vanilla 1.21.3 就有, 不是 NeoForge 引入的):
+     *   ChunkMap.processUnloads → scheduleUnload → save(ChunkAccess)
+     *     → isExistingChunkFull(pos) → readChunk(pos).join()   ← 主线程同步等一次**磁盘读**
+     *
+     * 为什么在 `sync-chunk-writes=true` 下必然出事:
+     *   `sync` 会把 `RegionFileStorage` 的落盘改成"立即 write+fsync", 而 `IOWorker` 用
+     *   `PriorityConsecutiveExecutor` 按 region 串行执行任务 ⇒ 同一 region 的读请求会被排在
+     *   成千上万次 fsync 落盘之后。主线程这时在 join() 上原地等 ⇒ 一个 tick 卡到 ≥60 秒
+     *   (实测两次崩服, 栈签名完全一致: ChunkMap.java:814 ← :776 ← :540 ← :500 ← :465)。
+     *   34 m/s 巡航 + CP 前瞻窗口会让"卸载时还在 PROTOCHUNK 的区块"数量暴涨, 于是每次卸载
+     *   都要做一次这样的同步磁盘读。C2ME 会接管整套 IO 从而绕开这条路径 —— 而 **C2ME 只有 fabric 版**,
+     *   所以 NeoForge 必须自己治。
+     *
+     * true  = 只在"结果已经就绪"时才用磁盘答案; 未就绪时**绝不 join**, 直接按原版对"未缓存位置"
+     *         的同一答案 false 处理 (= 允许写入), 并把读请求异步留在飞, 下一 tick 再取真答案。
+     *         语义无害的理由: 原版 `isExistingChunkFull` 对**未缓存**的位置本来就返回 false ——
+     *         它返回的是 `markPosition(...) == 1`, 而 `markPosition` 返回的是
+     *         `Long2ByteOpenHashMap.put()` 的**旧值**(新键 = 0) ⇒ 首次询问恒为 false,
+     *         那次磁盘读的作用只是**把结论写进 chunkTypeCache 供后续询问使用**。
+     *         (javap 实测: ChunkMap 构造里 `new Long2ByteOpenHashMap()` 没有设 defaultReturnValue,
+     *          所以新键 put 返回 0。)
+     * false = 完全原版行为 (主线程 join, 可能崩服) —— 只在排查问题时用。
+     *
+     * 只对 **NeoForge 服务端**生效 (fabric 侧没有对应的 mixin; fabric 靠 C2ME)。
+     */
+    public boolean nonBlockingUnloadCheck = true;
+
     // P0: 扇形 ticket 总数硬上限 — 防止一次发几百个 ticket 造成过载 (chunks=227 bug)
     // v0.10: 提到 100 给 SectorBudgetController 的自适应档位留足中间空间
     // (旧 50 配 40 保底导致高负载档位被顶回, 自适应退化; 现保底按 20% 比例, 档位真正生效)
