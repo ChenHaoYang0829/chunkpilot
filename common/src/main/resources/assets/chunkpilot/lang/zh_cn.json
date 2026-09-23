@@ -112,5 +112,6 @@
   "chunkpilot.probe.world_not_found": "找不到世界 %1$s",
   "chunkpilot.probe.failed": "探针失败: %1$s",
   "chunkpilot.log.c2me_detected": "[ChunkPilot] 检测到 C2ME: 为避免卸载抖动, 扇形票管理已停用 (前瞻窗口仍然生效)",
-  "chunkpilot.log.forward_failed": "[ChunkPilot] 前瞻窗口更新失败 (第 %1$d 次): %2$s"
+  "chunkpilot.log.forward_failed": "[ChunkPilot] 前瞻窗口更新失败 (第 %1$d 次): %2$s",
+  "chunkpilot.log.config_released": "[ChunkPilot] 首次运行: 已释放参考配置到 %1$s (已存在的文件永不覆盖; 修改后可用 /chunkpilot reload config 生效)"
 }

@@ -36,8 +36,12 @@ public class MTRProvider implements VehicleProvider, IntegrationManager.Provider
     private Method vehicleGetXMethod = null;
     private Method vehicleGetZMethod = null;
 
+    /** 缓存周期默认值 —— 与 ChunkPilotConfig.Integration.cacheTicks 的默认值一致. */
+    private static final int DEFAULT_CACHE_TICKS = 10;
+    private int pathCacheTicks = DEFAULT_CACHE_TICKS;
     private ChunkPilotConfig.Integration config = new ChunkPilotConfig.Integration();
-    private final VehicleProvider.Cache<List<ChunkPos>> pathCache = new VehicleProvider.Cache<>(10);
+    // 非 final: updateConfig() 时按 [integration.<mod>] cacheTicks 重建 (默认 10 = 原硬编码值)
+    private VehicleProvider.Cache<List<ChunkPos>> pathCache = new VehicleProvider.Cache<>(DEFAULT_CACHE_TICKS);
 
     public boolean isAvailable() { return loaded; }
 
@@ -99,6 +103,13 @@ public class MTRProvider implements VehicleProvider, IntegrationManager.Provider
 
     public void updateConfig(ChunkPilotConfig.Integration cfg) {
         this.config = cfg;
+        // v0.11.10: 让 [integration...] cacheTicks 真正生效 (此前该键被解析但无人使用,
+        // 缓存周期一直硬编码 10). 默认值就是 10, 因此默认行为不变; 改配置才会变.
+        int ticks = Math.max(1, cfg.cacheTicks);
+        if (ticks != this.pathCacheTicks) {
+            this.pathCacheTicks = ticks;
+            this.pathCache = new VehicleProvider.Cache<>(ticks);
+        }
     }
 
     @Override

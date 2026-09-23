@@ -112,5 +112,6 @@
   "chunkpilot.probe.world_not_found": "world %1$s not found",
   "chunkpilot.probe.failed": "probe failed: %1$s",
   "chunkpilot.log.c2me_detected": "[ChunkPilot] C2ME detected: sector ticket management is disabled to avoid unload conflicts (forward window stays active)",
-  "chunkpilot.log.forward_failed": "[ChunkPilot] forward window update failed (#%1$d): %2$s"
+  "chunkpilot.log.forward_failed": "[ChunkPilot] forward window update failed (#%1$d): %2$s",
+  "chunkpilot.log.config_released": "[ChunkPilot] first run: released the reference config to %1$s (existing files are never overwritten; edit it, then run /chunkpilot reload config)"
 }
