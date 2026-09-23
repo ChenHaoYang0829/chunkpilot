@@ -106,45 +106,42 @@ enabled = true
 minSpeed = 1.0
 sectorAngle = 80
 
-# v0.5.1 轨道优先生成器 — 旧公式 [100/(v*max(0,d-n)+1) * (l/L)]
+# 生成器 — v0.8.0 起改用 deadline 排序 (DeadlineGenerationSorter, deadline = ρ / max(v, v_min)).
+# 注意: v0.3.0 旧权重公式的参数 n / logBase 已移除, 不再有对应配置键 (写了也会被忽略).
 # 扫描时跳过已生成 chunk (isChunkLoaded), 队列不被污染
 # 玩家脚下 chunk 强制高优 (兜底)
 [generation]
 enabled = true               # 用户偏好: 默认开
 v_min = 0.7                  # 速度阈值 (chunks/s)
-n = 5                        # 高优半径 (v0.3.0 默认 8 -> 5, 避免前方 6-8ch 死磕)
 lookAheadSeconds = 5.0       # 预测时长
 predictionTTLSeconds = 5.0   # 预测有效期
 maxChunksPerTick = 1         # Adaptive Controller 上限 (v0.10: 4->2)
 targetMspt = 35.0            # MSPT 目标值
-logBase = 2
 
-# v0.7.0 区块发送顺序 — 激进方向锐化公式
-# w = (cos α + C1)^γ / (1 + k·ρ) * (1 + β·v/v_ref)
-# γ=2 时前/后比 4.5x → 25x, 高速时再加 β·v/v_ref 整体提升
-# γ=1, β=0 退化为 v0.5.0 旧公式
+# 区块发送顺序 (v0.9.0 投影版权重)
+# w = [v·(c-p)/|c-p|] / (1 + k·ρ)     ← 分子是"接近速度"(点乘), 已同时含方向与速度
+# 注意: v0.7.0 的 c1 (角度保底) / v_ref (速度参考) 已移除 (改为硬编码常量), 不再是配置键;
+#       direction_gamma / v_boost_beta 仍会被解析并出现在 /chunkpilot send status,
+#       但投影公式本身不使用它们 (只使用 k).
 # 发送器不需要 isChunkLoaded 过滤 — vanilla 的 pendingChunks 已经只含“已生成未发送”
 [chunk_send]
 enabled = false              # v0.7.0: 默认关闭 (1.21.3 ChunkDataSender.makeBatch 私有, 接管未实装)
 v_min = 0.7
-c1 = 1.5                     # 角度保底 (前/后 5x — γ 未加时)
 k = 1.0                      # 距离衰减
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (1=旧版, 2=25x 前/后比)
-v_ref = 1.0                  # v0.7.0: 速度参考 (≈ 16 m/s 跑步峰值)
-v_boost_beta = 0.5           # v0.7.0: 速度加成 (v=5·v_ref 时 ×3.5)
+direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (当前仅展示, 不参与计算)
+v_boost_beta = 0.5           # v0.7.0: 速度加成 (当前仅展示, 不参与计算)
 
-# v0.7.0 客户端自适应渲染 — 激进方向锐化公式 (与服务端对称)
-# 调 γ/β 与 [chunk_send] 一致, 客户端服务端权重一致 → 列表无冲突
+# 客户端自适应渲染 (与服务端 [chunk_send] 对称, 同用 v0.9.0 投影公式)
+# 注意: c1 / v_ref 已移除; 本节的 direction_gamma / v_boost_beta 当前**没有任何读取点**
+#       (连 /chunkpilot send status 都不显示它们 — 那里显示的是 [chunk_send] 的同名键).
 [client_render]
 enabled = false
 target_fps = 60
-c1 = 1.5
 k = 1.0
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致
-v_ref = 1.0                  # v0.7.0
-v_boost_beta = 0.5           # v0.7.0
+direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致 (当前无读取点)
+v_boost_beta = 0.5           # v0.7.0: 当前无读取点
 frame_window = 60
 stable_threshold_ms = 2.0
 overload_factor = 1.1
