@@ -12,7 +12,8 @@
     "ServerPlayerMixin",
     "CheckExtensibleEnumsMixin",
     "ChunkMapNonBlockingUnloadMixin",
-    "ServerChunkCacheAccessor"
+    "ServerChunkCacheAccessor",
+    "LevelNonBlockingCollisionMixin"
   ],
   "client": [],
   "injectors": {
