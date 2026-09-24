@@ -2,9 +2,7 @@ package com.chunkpilot.fabric;
 
 import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.core.ChunkPilotCommand;
-import com.chunkpilot.fabric.network.FabricNetworkSender;
 import com.chunkpilot.fabric.platform.FabricPlatform;
-import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -40,19 +38,7 @@ public class ServerInitializer {
         // 绑定/解绑 MinecraftServer 到 FabricPlatform
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             FabricPlatform.setServer(server);
-            FabricNetworkSender networkSender = new FabricNetworkSender();
-            ChunkPilot.getInstance().initNetwork(networkSender);
-            networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
-                @Override
-                public void onClientCapability(java.util.UUID playerId, boolean clientHasCP, int protocolVersion) {
-                    ChunkPilot.getInstance().getNetworkDispatcher().onClientCapability(playerId, clientHasCP, protocolVersion);
-                }
-                @Override
-                public void onClientConfigOverride(java.util.UUID playerId, com.chunkpilot.network.ClientConfigOverridePacket packet) {
-                    ChunkPilot.getInstance().getNetworkDispatcher().onClientConfigOverride(playerId, packet);
-                }
-            });
-            ChunkPilotFabric.LOGGER.info("ChunkPilot: server bound, network initialized");
+            ChunkPilotFabric.LOGGER.info("ChunkPilot: server bound");
             // 启动冻结检测器 (诊断: 主线程卡住时 dump 玩家周边 chunk 状态)
             try { com.chunkpilot.fabric.platform.FabricPlatform.startFreezeDetector(); }
             catch (Throwable ignored) {}
@@ -157,37 +143,11 @@ public class ServerInitializer {
                     }
                 }
             } catch (Throwable ignored) {}
-
-            // v0.4.0: 网络调度器 tick (发送优先级提示)
-            if (cp.getNetworkDispatcher() != null) {
-                var tracker = cp.getOptimizer().getSpeedTracker();
-                var playerPositions = new java.util.HashMap<java.util.UUID, int[]>();
-                for (var sp : server.getPlayerList().getPlayers()) {
-                    playerPositions.put(sp.getUUID(), new int[]{sp.blockPosition().getX() >> 4, sp.blockPosition().getZ() >> 4});
-                }
-                cp.getNetworkDispatcher().onServerTick(tracker, playerPositions);
-            }
         });
 
         // 玩家进出事件
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             FabricPlatform.registerPlayer(handler.player);
-            // 1.20.1 移植: 1.20.1 **没有 configuration 阶段** (1.20.2+ 才有), 原实现在配置
-            //   阶段做能力协商 → 在 1.20.1 永远走不到, 改成 join 之后服务端主动下发.
-            try {
-                String ver = net.fabricmc.loader.api.FabricLoader.getInstance()
-                    .getModContainer("chunkpilot")
-                    .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("");
-                com.chunkpilot.fabric.network.FabricNetworkSender.sendCapabilityOnJoin(
-                    handler.player, ver, com.chunkpilot.network.CapabilityPacket.PROTOCOL_VERSION);
-            } catch (Throwable t) {
-                org.slf4j.LoggerFactory.getLogger("ChunkPilot").debug(
-                    "[ChunkPilot] capability 下发失败: {}", t.toString());
-            }
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerConnect(handler.player.getUUID());
-            }
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             var optimizer = ChunkPilot.getInstance().getOptimizer();
@@ -196,10 +156,6 @@ public class ServerInitializer {
                 if (optimizer.getIntegrationManager() != null) {
                     optimizer.getIntegrationManager().onPlayerRemoved(handler.player.getUUID());
                 }
-            }
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerDisconnect(handler.player.getUUID());
             }
             FabricPlatform.unregisterPlayer(handler.player);
         });
@@ -302,59 +258,7 @@ public class ServerInitializer {
                 .then(net.minecraft.commands.Commands.literal("help")
                     .requires(src -> src.hasPermission(0))
                     .executes(ctx -> runMain(ctx, new String[]{"help"})))
-                // ===== 1.20.1 移植新增: /chunkpilot tickstats =====
-                // 1.20.1 没有 /tick 命令 (javap 实证: server jar 里没有 TickCommand, 1.20.3+ 才有),
-                // 所以 bench 采样器拿不到 MSPT. 这里用一个与 /tick query **同格式**的输出补上,
-                // 让 run_version_test.sh / bench_run.py 的采样正则不用改就能用.
-                // 只在 fabric/1.20.1 注册; 不影响其它版本.
-                .then(net.minecraft.commands.Commands.literal("tickstats")
-                    .requires(src -> src.hasPermission(0))
-                    .executes(ctx -> {
-                        for (String line : tickStatsLines(ctx.getSource().getServer())) {
-                            ctx.getSource().sendSystemMessage(
-                                net.minecraft.network.chat.Component.literal(line));
-                        }
-                        return 1;
-                    }))
         );
-    }
-
-    /**
-     * 用 1.20.1 可用的 `MinecraftServer.tickTimes` (public final long[], 纳秒) +
-     * `getAverageTickTime()` (public float, 毫秒) 生成与 1.21.x `/tick query` 同格式的文本。
-     * 采样器正则: `Average time per tick:\s*([\d.]+)ms` / `P50:` / `P95:` / `P99:` / `sample:`。
-     */
-    private static java.util.List<String> tickStatsLines(MinecraftServer server) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        long[] times = server.tickTimes;
-        int n = 0;
-        long[] copy = new long[times.length];
-        for (long t : times) {
-            if (t > 0) copy[n++] = t;
-        }
-        copy = java.util.Arrays.copyOf(copy, n);
-        java.util.Arrays.sort(copy);
-        double avg = server.getAverageTickTime();
-        out.add(String.format(java.util.Locale.ROOT,
-            "Target tick rate: 20.0 per second"));
-        out.add(String.format(java.util.Locale.ROOT,
-            "Average time per tick: %.3fms (Target: 50.000ms; %.1f%% of tick)",
-            avg, avg / 50.0 * 100.0));
-        double p50 = pct(copy, 0.50), p95 = pct(copy, 0.95), p99 = pct(copy, 0.99);
-        out.add(String.format(java.util.Locale.ROOT,
-            "Percentiles: P50: %.3fms P95: %.3fms P99: %.3fms", p50, p95, p99));
-        long over50 = 0;
-        for (long t : copy) if (t > 50_000_000L) over50++;
-        double max = copy.length == 0 ? 0 : copy[copy.length - 1] / 1e6;
-        out.add(String.format(java.util.Locale.ROOT,
-            "sample: %d ticks, max: %.3fms, over50ms: %d", copy.length, max, over50));
-        return out;
-    }
-
-    private static double pct(long[] sorted, double q) {
-        if (sorted.length == 0) return 0;
-        int i = (int) Math.floor(q * (sorted.length - 1));
-        return sorted[Math.max(0, Math.min(sorted.length - 1, i))] / 1e6;
     }
 
     /** 把命令源的权限等级压成 CP 认识的三档 (0 / 2 / 4). 控制台恒为 4。 */

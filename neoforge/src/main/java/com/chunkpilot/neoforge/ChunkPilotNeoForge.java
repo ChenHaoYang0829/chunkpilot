@@ -4,9 +4,7 @@ import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.config.ChunkPilotConfig;
 import com.chunkpilot.core.ChunkPilotCommand;
 import com.chunkpilot.generation.GenerationScheduler;
-import com.chunkpilot.neoforge.network.NeoForgeNetworkSender;
 import com.chunkpilot.neoforge.platform.NeoForgePlatform;
-import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -19,16 +17,16 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.server.ServerStartedEvent;
-import net.minecraftforge.event.server.ServerStoppedEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.server.ServerLifecycleHooks;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,31 +40,18 @@ public class ChunkPilotNeoForge {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("ChunkPilot");
 
-    // Forge 47 (1.20.1) 支持 @Mod 构造器注入 IEventBus (与 NeoForge 21.x 同形), 无需改签名。
     public ChunkPilotNeoForge(IEventBus modEventBus) {
         LOGGER.info("ChunkPilot initializing on NeoForge...");
 
         PlatformAbstraction platform = new NeoForgePlatform();
         new ChunkPilot(platform);
 
-        // v0.4.0: 网络注册
-        // 1.20.1 (Forge 47): 网络层降级为 no-op —— 见 NeoForgeNetworkSender 的类注释
-        // (1.21.x 的 RegisterPayloadHandlersEvent 在 Forge 47 不存在; 需要 SimpleChannel 重写)
-        NeoForgeNetworkSender networkSender = new NeoForgeNetworkSender();
-        networkSender.register();
-        ChunkPilot.getInstance().initNetwork(networkSender);
-        networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
-            @Override
-            public void onClientCapability(UUID playerId, boolean clientHasCP, int protocolVersion) {
-                ChunkPilot.getInstance().getNetworkDispatcher().onClientCapability(playerId, clientHasCP, protocolVersion);
-            }
-            @Override
-            public void onClientConfigOverride(UUID playerId, com.chunkpilot.network.ClientConfigOverridePacket packet) {
-                ChunkPilot.getInstance().getNetworkDispatcher().onClientConfigOverride(playerId, packet);
-            }
-        });
+        // 客户端物理侧: 只留一条启动日志 (1.0.0 起客户端无渲染侧功能)
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            com.chunkpilot.neoforge.client.ChunkPilotNeoForgeClient.init();
+        }
 
-        MinecraftForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.register(this);
 
         LOGGER.info("ChunkPilot initialized on NeoForge");
     }
@@ -91,10 +76,7 @@ public class ChunkPilotNeoForge {
     }
 
     @SubscribeEvent
-    public void onServerTick(TickEvent.ServerTickEvent event) {
-        // 1.20.1 (Forge 47): ServerTickEvent 分 START/END 两个 phase, 这里只处理 START
-        // (NeoForge 21.x 用的是独立的 ServerTickEvent.Pre)
-        if (event.phase != TickEvent.Phase.START) return;
+    public void onServerTick(ServerTickEvent.Pre event) {
         var cp = ChunkPilot.getInstance();
         if (cp == null) return;
 
@@ -141,35 +123,12 @@ public class ChunkPilotNeoForge {
             // 调度器异常不应上抛, 否则下一次 onServerTick 会被 NeoForge 取消订阅
             LOGGER.warn("[ChunkPilot] GenerationScheduler tick failed: {}", t.toString());
         }
-
-        // v0.4.0: 网络调度器 tick (发送优先级提示)
-        try {
-            var dispatcher = cp.getNetworkDispatcher();
-            if (dispatcher != null) {
-                var tracker = cp.getOptimizer().getSpeedTracker();
-                var playerPositions = new java.util.HashMap<java.util.UUID, int[]>();
-                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-                if (server != null) {
-                    for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
-                        playerPositions.put(sp.getUUID(), new int[]{sp.blockPosition().getX() >> 4, sp.blockPosition().getZ() >> 4});
-                    }
-                    dispatcher.onServerTick(tracker, playerPositions);
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.warn("[ChunkPilot] NetworkDispatcher tick failed: {}", t.toString());
-        }
     }
 
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
             NeoForgePlatform.registerPlayer(sp);
-            // v0.4.0: 发送 Capability 给客户端
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerConnect(sp.getUUID());
-            }
             LOGGER.info("[ChunkPilot] Player logged in: {} (uuid={}, cache size={})",
                 sp.getName().getString(), sp.getUUID(), NeoForgePlatform.getCacheSize());
         }
@@ -184,11 +143,6 @@ public class ChunkPilotNeoForge {
                 if (optimizer.getIntegrationManager() != null) {
                     optimizer.getIntegrationManager().onPlayerRemoved(sp.getUUID());
                 }
-            }
-            // v0.4.0: 清理网络状态
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerDisconnect(sp.getUUID());
             }
             NeoForgePlatform.unregisterPlayer(sp);
         }
@@ -301,20 +255,6 @@ public class ChunkPilotNeoForge {
                 .then(Commands.literal("help")
                     .requires(src -> src.hasPermission(0))
                     .executes(ctx -> runMain(ctx, new String[]{"help"})))
-                // ===== 1.20.1 移植新增: /chunkpilot tickstats =====
-                // 1.20.1 **没有 /tick 命令** (javap 实证: 1.20.1 的 server jar 里没有 TickCommand),
-                // 所以 forge/neoforge 侧同样拿不到 MSPT (bench 的 A 指标整列会是 None)。
-                // 这里给出与 /tick query **同格式**的输出, bench_run 的采样器会自动回退到它
-                // (实现与 fabric 侧 ServerInitializer 逐行一致)。
-                .then(Commands.literal("tickstats")
-                    .requires(src -> src.hasPermission(0))
-                    .executes(ctx -> {
-                        for (String line : tickStatsLines(ctx.getSource().getServer())) {
-                            ctx.getSource().sendSystemMessage(
-                                net.minecraft.network.chat.Component.literal(line));
-                        }
-                        return 1;
-                    }))
         );
 
         LOGGER.info("ChunkPilot: /chunkpilot command registered (with subcommands)");
@@ -339,43 +279,5 @@ public class ChunkPilotNeoForge {
                 net.minecraft.network.chat.Component.literal(line));
         }
         return 1;
-    }
-
-    /**
-     * 用 1.20.1 可用的 `MinecraftServer.tickTimes` (public final long[], 纳秒) +
-     * `getAverageTickTime()` (public float, 毫秒) 生成与 1.21.x `/tick query` 同格式的文本。
-     * 采样器正则: `Average time per tick:\s*([\d.]+)ms` / `P50:` / `P95:` / `P99:` / `sample:`。
-     */
-    private static java.util.List<String> tickStatsLines(MinecraftServer server) {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        long[] times = server.tickTimes;
-        int n = 0;
-        long[] copy = new long[times.length];
-        for (long t : times) {
-            if (t > 0) copy[n++] = t;
-        }
-        copy = java.util.Arrays.copyOf(copy, n);
-        java.util.Arrays.sort(copy);
-        double avg = server.getAverageTickTime();
-        out.add(String.format(java.util.Locale.ROOT,
-            "Target tick rate: 20.0 per second"));
-        out.add(String.format(java.util.Locale.ROOT,
-            "Average time per tick: %.3fms (Target: 50.000ms; %.1f%% of tick)",
-            avg, avg / 50.0 * 100.0));
-        double p50 = pct(copy, 0.50), p95 = pct(copy, 0.95), p99 = pct(copy, 0.99);
-        out.add(String.format(java.util.Locale.ROOT,
-            "Percentiles: P50: %.3fms P95: %.3fms P99: %.3fms", p50, p95, p99));
-        long over50 = 0;
-        for (long t : copy) if (t > 50_000_000L) over50++;
-        double max = copy.length == 0 ? 0 : copy[copy.length - 1] / 1e6;
-        out.add(String.format(java.util.Locale.ROOT,
-            "sample: %d ticks, max: %.3fms, over50ms: %d", copy.length, max, over50));
-        return out;
-    }
-
-    private static double pct(long[] sorted, double q) {
-        if (sorted.length == 0) return 0;
-        int i = (int) Math.floor(q * (sorted.length - 1));
-        return sorted[Math.max(0, Math.min(sorted.length - 1, i))] / 1e6;
     }
 }

@@ -8,9 +8,6 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -163,37 +160,35 @@ class ReflectionContractTest {
     }
 
     @Test
-    @DisplayName("T21b 客户端 mixin JSON 注册的 mixin 类存在于 classpath")
-    void t21b_clientMixinClassesExist() {
-        try (InputStream is = getClass().getResourceAsStream("/chunkpilot.client.mixins.json")) {
-            assertNotNull(is, "chunkpilot.client.mixins.json 不在 classpath");
-            byte[] bytes = is.readAllBytes();
-            String content = new String(bytes, StandardCharsets.UTF_8);
+    @DisplayName("T21b 已删除的客户端渲染链路: 不得留下 mixin 配置/类/元数据引用 (1.0.0 死代码清理)")
+    void t21b_clientMixinChainRemoved() {
+        // 1.0.0 把"客户端渲染优先级"链路整体删了 (ChunkPilotClient 的静态单例从未被赋值 ⇒
+        //   两个客户端 Mixin 拿到的一律是 null, 静默 return, 从未生效)。这条测试守的是
+        //   "删干净": 留一个指向不存在类的 mixin 配置, 会让 Mixin 在客户端启动期直接报错
+        //   (neoforge 那份原来还是 required=true)。
+        assertNull(getClass().getResourceAsStream("/chunkpilot.client.mixins.json"),
+            "chunkpilot.client.mixins.json 应随客户端渲染链路一并删除");
 
-            // 验证客户端 mixin 类都被注册
-            Set<String> expectedClasses = new HashSet<>(Arrays.asList(
-                "SodiumRenderSectionManagerMixin", "ChunkRenderDispatcherMixin"
-            ));
-            for (String cls : expectedClasses) {
-                assertTrue(content.contains("\"" + cls + "\""),
-                    "客户端 mixin JSON 未注册 " + cls);
-            }
+        for (String fqn : new String[]{
+                "com.chunkpilot.fabric.client.mixin.SodiumRenderSectionManagerMixin",
+                "com.chunkpilot.fabric.client.mixin.ChunkRenderDispatcherMixin",
+                "com.chunkpilot.client.ChunkPilotClient"}) {
+            assertThrows(ClassNotFoundException.class, () -> Class.forName(fqn),
+                fqn + " 应随客户端渲染链路一并删除");
+        }
 
-            // 进一步: 实际加载这些 mixin 类, 确认 classpath 上能找到
-            // 注意: 注解检测可能因 @Mixin 注解类来自 spongepowered mixin jar
-            //   在某些 classloader 下未 initialize, 这里只检查类能被加载
-            for (String cls : expectedClasses) {
-                String fqn = "com.chunkpilot.fabric.client.mixin." + cls;
-                try {
-                    Class<?> klass = Class.forName(fqn);
-                    // 轻断言: mixin JSON 注册了 + 类能在 classpath 找到
-                    // 不强检注解, 避免注解类未初始化问题
-                } catch (ClassNotFoundException e) {
-                    fail("mixin 类 " + fqn + " 在 classpath 找不到");
-                }
-            }
+        // 元数据不得再声明这个配置 (否则 loader 会去找一个不存在的文件)
+        try (InputStream is = getClass().getResourceAsStream("/fabric.mod.json")) {
+            assertNotNull(is, "fabric.mod.json 不在 classpath");
+            String fm = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            assertFalse(fm.contains("chunkpilot.client.mixins.json"),
+                "fabric.mod.json 不得再声明已删除的客户端 mixin 配置");
+            assertTrue(fm.contains("chunkpilot.mixins.json"),
+                "服务端 mixin 配置必须仍在声明中");
+            assertTrue(fm.contains("com.chunkpilot.fabric.client.ChunkPilotFabricClient"),
+                "client 入口点必须仍指向一个真实存在的类");
         } catch (Exception e) {
-            fail("读 chunkpilot.client.mixins.json 失败: " + e.getMessage());
+            fail("读 fabric.mod.json 失败: " + e.getMessage());
         }
     }
 
