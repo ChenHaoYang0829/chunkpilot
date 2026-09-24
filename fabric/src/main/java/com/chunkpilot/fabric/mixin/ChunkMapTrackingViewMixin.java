@@ -68,7 +68,7 @@ public abstract class ChunkMapTrackingViewMixin {
             if (shift == null || (shift[0] == 0 && shift[1] == 0)) {
                 return ChunkTrackingView.of(chunkPos, viewDistance);
             }
-            return ChunkTrackingView.of(new ChunkPos(chunkPos.x + shift[0], chunkPos.z + shift[1]),
+            return ChunkTrackingView.of(new ChunkPos(chunkPos.x() + shift[0], chunkPos.z() + shift[1]),
                 viewDistance);
         } catch (Throwable t) {
             return ChunkTrackingView.of(chunkPos, viewDistance);

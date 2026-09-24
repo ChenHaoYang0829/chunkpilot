@@ -13,6 +13,14 @@ pluginManagement {
             if (requested.id.id == "dev.architectury.loom") {
                 useModule("dev.architectury:architectury-loom:${requested.version}")
             }
+            // 2026-09-24 (port/26.3): 26.x 起 MC 官方 jar 不再混淆 ⇒ **没有 mappings 可解析**,
+            //   带 remap 的 `dev.architectury.loom` 在配置期必然失败
+            //   ("Configuration 'mappings' has no dependencies")。
+            //   architectury-loom 1.17 同时提供 no-remap 变体的 plugin id, 实现 jar 与上面**同一个**
+            //   (plugin marker pom 实证: dev.architectury.loom-no-remap.gradle.plugin → dev.architectury:architectury-loom)。
+            if (requested.id.id == "dev.architectury.loom-no-remap") {
+                useModule("dev.architectury:architectury-loom:${requested.version}")
+            }
             if (requested.id.id == "architectury-plugin") {
                 useModule("architectury-plugin:architectury-plugin.gradle.plugin:${requested.version}")
             }

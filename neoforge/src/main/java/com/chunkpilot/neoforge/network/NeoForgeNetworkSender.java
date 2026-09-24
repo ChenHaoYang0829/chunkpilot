@@ -8,7 +8,8 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+// 1.21.11: ResourceLocation 已更名为 net.minecraft.resources.Identifier (javap 实证)
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadHandler;
@@ -34,7 +35,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
 
     public record CapabilityPayload(boolean hasCP, String version, int protocol) implements CustomPacketPayload {
         public static final Type<CapabilityPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "capability"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "capability"));
         public static final StreamCodec<RegistryFriendlyByteBuf, CapabilityPayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.BOOL, CapabilityPayload::hasCP,
@@ -46,7 +47,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
 
     public record ClientCapabilityPayload(boolean hasCP, int protocol) implements CustomPacketPayload {
         public static final Type<ClientCapabilityPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "client_capability"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "client_capability"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ClientCapabilityPayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.BOOL, ClientCapabilityPayload::hasCP,
@@ -57,7 +58,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
 
     public record ConfigOverridePayload(int targetFps, int meshingQueueSize, float avgFrameTime, boolean renderEnabled) implements CustomPacketPayload {
         public static final Type<ConfigOverridePayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "config_override"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "config_override"));
         public static final StreamCodec<RegistryFriendlyByteBuf, ConfigOverridePayload> STREAM_CODEC =
             StreamCodec.composite(
                 ByteBufCodecs.INT, ConfigOverridePayload::targetFps,
@@ -71,7 +72,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     public record PriorityHintPayload(int playerChunkX, int playerChunkZ, float speed, float direction,
                                        List<ChunkPriorityHintPacket.ChunkPriority> priorities) implements CustomPacketPayload {
         public static final Type<PriorityHintPayload> TYPE = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(PROTOCOL_ID, "priority_hint"));
+            Identifier.fromNamespaceAndPath(PROTOCOL_ID, "priority_hint"));
         public static final StreamCodec<RegistryFriendlyByteBuf, PriorityHintPayload> STREAM_CODEC =
             new StreamCodec<>() {
                 @Override
@@ -199,9 +200,13 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     }
 
     @Override
+    // 1.21.11 (NeoForge 21.11.45) API 迁移: `net.neoforged.neoforge.network.PacketDistributor
+    // .sendToServer(...)` **已删除** (javap 实证: 该类的 send* 只剩 server→client 方向;
+    // client→server 搬到了 `net.neoforged.neoforge.client.network.ClientPacketDistributor`)。
+    // 下面两个方法本来就是**客户端**发往服务端, 所以换用 ClientPacketDistributor 是等价替换。
     public void sendConfigOverride(ClientConfigOverridePacket packet) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ConfigOverridePayload(
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ConfigOverridePayload(
                 packet.targetFps, packet.meshingQueueSize,
                 packet.avgFrameTimeMs, packet.clientRenderEnabled));
         } catch (Exception e) {
@@ -212,7 +217,7 @@ public class NeoForgeNetworkSender implements PlatformNetworkSender {
     @Override
     public void sendClientCapability(boolean hasCP, int protocolVersion) {
         try {
-            net.neoforged.neoforge.network.PacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ClientCapabilityPayload(hasCP, protocolVersion));
         } catch (Exception e) {
             LOG.warn("Failed to send client capability: {}", e.getMessage());
         }

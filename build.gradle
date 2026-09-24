@@ -5,27 +5,43 @@ buildscript {
 }
 
 plugins {
-    id 'dev.architectury.loom' version '1.13.469' apply false
-    id 'architectury-plugin' version '3.5.169' apply false
+    // ==================== 26.3 的重大差异: MC 官方不再混淆 ====================
+    // 从 26.1 起 Mojang 发布的 client/server jar 就是**未混淆**的。javap 实证(26.3 内层 server jar):
+    //   net/minecraft/server/level/ChunkMap.class 直接以真实名存在; 26.3.json 的 downloads 里
+    //   连 client_mappings/server_mappings 两项都没有了。随之:
+    //   · Fabric 的 intermediary 变成 no-op —— meta.fabricmc.net/v2/versions/loader/26.3 返回
+    //     `intermediary 0.0.0`, yarn 列表为空 ⇒ **不需要任何 mappings**;
+    //   · Fabric 官方要求 Loom **1.17** + Gradle 9.6 (fabricmc.net/2026/09/15/263.html),
+    //     示例工程改用它自己的 `net.fabricmc.fabric-loom`(非 remap) 插件, mappings 整行删除;
+    //   · mixin 的 compatibilityLevel 必须提到 JAVA_25 —— 只有 mixin 0.17.4 才认识 JAVA_25,
+    //     而 loader 26.3 的 launcherMeta 里正是 sponge-mixin:0.17.4+mixin.0.8.7 (实证)。
+    // ⚠ 必须是 **-no-remap** 变体: MC 26.x 官方 jar 未混淆, 没有 mappings 可声明,
+    //   带 remap 的 dev.architectury.loom 会在配置期直接失败
+    //   ("Configuration 'mappings' has no dependencies")。
+    //   no-remap 变体既不重映射 MC 也不重映射 mod ⇒ jar 里的名字就是运行期真名, 连 refmap 都不需要。
+    id 'dev.architectury.loom-no-remap' version '1.17.493' apply false
+    id 'architectury-plugin' version '3.5.170' apply false
 }
 
 ext {
     // 版本常量
-    minecraftVersion = "1.21.1"
-    
+    minecraftVersion = "26.3"      // 协议 777 / world_version 5023 / 需要 Java 25
+
     // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
-    
-    // NeoForge
-    neoforgeVersion = "21.1.77"
-    
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.161.0+26.3"
+    // 26.3 起官方不再发布 yarn/intermediary 映射, 此变量已无用途 (保留以免动到其它引用点)
+    yarnMappings = ""
+
+    // NeoForge —— 26.3 线目前**只有 beta**: 26.3.0.16-beta 为最新
+    // (maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge 实证, 26.3.0.0-beta..26.3.0.16-beta)
+    neoforgeVersion = "26.3.0.16-beta"
+
     // Architectury
-    architecturyVersion = "13.0.8"
-    
-    // Mod
-    modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
+    architecturyVersion = "19.0.1"
+
+    // Mod —— 用户硬性要求: 所有产物版本号统一 1.0.0
+    modVersion = "1.0.0"
     modGroup = "com.chunkpilot"
     modId = "chunkpilot"
 }
@@ -34,7 +50,7 @@ subprojects {
     apply plugin: 'java'
     // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
     if (project.name != 'fabric') {
-        apply plugin: 'dev.architectury.loom'
+        apply plugin: 'dev.architectury.loom-no-remap'
         // 2026-09-24: 不再应用 'architectury-plugin' —— 它只服务 @ExpectPlatform 代码生成与本项目零使用的
         //   platformPackage 设置; 实测 :common:test / :neoforge:build 在移除后仍通过。
         //   (dev.architectury.loom 仍保留: 它是 common/neoforge 实际使用的 loom 实现。)
@@ -42,21 +58,27 @@ subprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(21)
+            // 26.3 需要 Java 25 —— server.jar 内层 version.json: "java_version": 25
+            languageVersion = JavaLanguageVersion.of(25)
         }
     }
 
-    if (project.name != 'fabric') {
-        loom {
-            silentMojangMappingsLicense()
-        }
-    }
+    // 2026-09-24 (26.3): 这里原有的 `loom { silentMojangMappingsLicense() }` 已删除 ——
+    //   它只在"用 Mojang 官方映射"时抑制许可提示, 而 26.3 根本没有 mappings 可声明。
+
+    // 2026-09-24 (26.3): no-remap 变体下 `remapJar` / `remapSourcesJar` 任务**不存在**
+    //   (既不重映射 MC 也不重映射 mod)。用一个按名匹配的守卫代替直接引用, 免得 build 脚本
+    //   在两种 loom 变体之间切换时崩在 "Task 'remapJar' not found"。
 
     // 2026-08-01: minecraft dependency 由各子项目自己设 (fabric 1.21.2, neoforge 1.21.1 不同)
     // 不在这里注入, 各子项目 build.gradle 自己声明
 
     repositories {
         mavenCentral()
+        // 2026-09-24 (26.3): NeoForge 官方仓库必须排在**最前**。默认顺序下 Gradle 会先去
+        //   repo.papermc.io 找 net.neoforged:neoforge:*（那里没有）, 实测表现为 "Read timed out"
+        //   而不是干净的 404 —— 直接卡掉整个 :neoforge 配置期。
+        maven { url "https://maven.neoforged.net/releases" }
         maven { url "https://maven.fabricmc.net/" }
         maven { url "https://maven.architectury.dev/" }
         maven { url "https://repo.papermc.io/repository/maven-public/" }

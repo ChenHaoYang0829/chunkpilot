@@ -2,8 +2,7 @@
   "required": false,
   "minVersion": "0.8",
   "package": "com.chunkpilot.fabric.client.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "refmap": "chunkpilot.client.refmap.json",
+  "compatibilityLevel": "JAVA_25",
   "mixins": [],
   "client": [
     "SodiumRenderSectionManagerMixin",

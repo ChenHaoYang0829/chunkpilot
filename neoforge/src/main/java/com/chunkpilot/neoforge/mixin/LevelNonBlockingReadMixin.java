@@ -1,7 +1,7 @@
-package com.chunkpilot.fabric.mixin;
+package com.chunkpilot.neoforge.mixin;
 
 import com.chunkpilot.ChunkPilot;
-import com.chunkpilot.fabric.util.MoveGuard;
+import com.chunkpilot.neoforge.util.MoveGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkResult;
@@ -23,49 +23,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * v0.11.6 非阻塞区块读取 —— 修"无 C2ME 会崩"和客户端"墙"的**根因**.
+ * v0.11.6 非阻塞区块读取 —— neoforge 移植 (main 作业书 §2 第 1 项)。
  *
- * ============================ 1.21.3 的真实调用链 (jstack 实证, 8/8 次同签名) ============================
- *   A) 碰撞
- *   ServerGamePacketListenerImpl.handleMovePlayer
- *     → Entity.move → Entity.collide → Entity.collideBoundingBox → Entity.collectColliders
- *       → CollisionGetter.getBlockCollisions → BlockCollisions.computeNext
- *         → Level.getChunkForCollisions(cx,cz)
- *           → Level.getChunk(cx,cz,FULL,false) → ServerChunkCache.getChunk(:151)
- *             → ServerChunkCache$MainThreadExecutor.managedBlock → LockSupport.parkNanos   ← 主线程 park
+ * **语义与 `com.chunkpilot.fabric.mixin.LevelNonBlockingReadMixin` 逐条等价**:
+ * 三个入口全部先判"该区块是否**已经** FULL", 未就绪时返回**原版在"区块不存在"时本来就会返回的值**
+ * (`null` / `Blocks.AIR` / `Fluids.EMPTY`), 不改变已加载区块的任何返回值、不改返回类型、不吞异常
+ * (异常一律 `catch (Throwable)` 后放行原版)。
  *
- *   B) 落地检查 / 流体检查
- *   handleMovePlayer
- *     → ServerPlayer.doCheckFallDamage → LivingEntity.checkFallDamage
- *       → Entity.updateInWaterStateAndDoWaterCurrentPushing
- *         → Entity.updateFluidHeightAndDoFluidPushing
- *           → Level.getFluidState(pos) → Level.getChunkAt(pos) → Level.getChunk(cx,cz)
- *             → ServerChunkCache.getChunk → managedBlock → parkNanos                   ← 主线程 park
+ * ============================ 兼容性约束 (作业书 §3) ============================
+ *  1. 只作用于 **ServerLevel**; 客户端 Level 本来就不阻塞 ⇒ 客户端逻辑零改动;
+ *  2. 开关 = **已有的** `[protection] nonBlockingCollision` (碰撞) 与
+ *     `[protection] nonBlockingReads` (方块/流体, 默认 false ⇒ 默认行为=原版);
+ *     **不新增任何配置键**;
+ *  3. 每个注入点 `require = 0, expect = 0` ⇒ 目标方法在某个版本不存在时**只是本 mixin 不生效**,
+ *     绝不因硬编码 descriptor 让服务端启动崩溃 (本工程已多次因此崩服)。
  *
- * 关键: `load=false` **并不等于不阻塞**. 只要 ChunkHolder 在可见表里 (玩家票范围内)
- * 但还没到 FULL, `ServerChunkCache.getChunk` 依然 managedBlock 等它完成.
- *
- * 更致命的是这是个**正反馈死锁**: 主线程被 park 住 → `ChunkMap.tick`/`runAllUpdates`
- * 这些"把生成任务推下去"的步骤全都停摆 → 那个区块永远到不了 FULL → park 永远不返回.
- * CP 的 FreezeDetector 现场记录证实: 玩家周围 9x9 (r=4) 全 NOT-FULL, 而同期
- * `[Gen] queue=1 outstanding=1/32` —— 生成队列几乎是空的, 服务器**不是**算不过来,
- * 是被自己锁死了. 无 C2ME 时实测单次 park 2.8~45 秒, 最后
- * `Server Watchdog: A single server tick took 60.00 seconds` → 强制关服.
- *
- * ============================ 本 Mixin 做什么 ============================
- *   三个入口, 全部先判断"该区块是否**已经** FULL":
- *     1. Level.getChunkForCollisions  (始终生效)  → 未就绪返回 null
- *        (这是原版自己的"区块不存在"返回值, BlockCollisions 直接跳过, 无需调用方适配)
- *     2. Level.getBlockState          (仅玩家移动包处理期间) → 未就绪返回 AIR
- *     3. Level.getFluidState          (仅玩家移动包处理期间) → 未就绪返回 EMPTY
- *
- * 语义影响: "还没生成完的区块" 对碰撞/方块/流体读而言等于不存在 ——
- *   这与原版**客户端**的行为一致 (客户端没有的区块本来就没有方块/碰撞),
- *   所以服务端与客户端对"玩家能不能从这儿过去"的判断反而更一致 → 回弹更少.
- *   代价: 极端落后时实体可能短暂穿过正在生成的区块 —— 但原版在那种场合的结局
- *   就是 park 十几秒乃至崩服, 这是严格更优的取舍.
- *
- * 只作用于 ServerLevel (客户端 Level 本来就不阻塞).
+ * javap 依据 (1.21.9/1.21.10/1.21.11 三个版本的运行期 MC jar 逐个核对, 签名完全一致):
+ *   Level.getChunkForCollisions(int,int) -> BlockGetter
+ *   Level.getBlockState(BlockPos) -> BlockState
+ *   Level.getFluidState(BlockPos) -> FluidState
  */
 @Mixin(Level.class)
 public abstract class LevelNonBlockingReadMixin {
@@ -93,7 +69,8 @@ public abstract class LevelNonBlockingReadMixin {
     }
 
     // ---- 1) 碰撞查询: 始终生效 (只影响实体碰撞, 影响面最小, 收益最大) ----
-    @Inject(method = "getChunkForCollisions", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getChunkForCollisions", at = @At("HEAD"), cancellable = true,
+            require = 0, expect = 0)
     private void chunkpilot$nonBlockingCollision(int chunkX, int chunkZ,
                                                  CallbackInfoReturnable<BlockGetter> cir) {
         try {
@@ -108,7 +85,8 @@ public abstract class LevelNonBlockingReadMixin {
     }
 
     // ---- 2) 方块读取: 只在玩家移动包处理期间生效 ----
-    @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true,
+            require = 0, expect = 0)
     private void chunkpilot$nonBlockingBlockState(BlockPos pos,
                                                   CallbackInfoReturnable<BlockState> cir) {
         try {
@@ -124,7 +102,8 @@ public abstract class LevelNonBlockingReadMixin {
     }
 
     // ---- 3) 流体读取: 只在玩家移动包处理期间生效 ----
-    @Inject(method = "getFluidState", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getFluidState", at = @At("HEAD"), cancellable = true,
+            require = 0, expect = 0)
     private void chunkpilot$nonBlockingFluidState(BlockPos pos,
                                                   CallbackInfoReturnable<FluidState> cir) {
         try {

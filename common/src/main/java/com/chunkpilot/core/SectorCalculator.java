@@ -137,6 +137,8 @@ public class SectorCalculator {
          * 编码为 long（与 Minecraft ChunkPos.asLong 一致：低 32 位 = x，高 32 位 = z）
          */
         public long toLong() {
+            // ⚠ 这里的 `ChunkPos` 是 **SectorCalculator 的嵌套类**, 不是 net.minecraft.world.level.ChunkPos
+            //   (26.3 把 MC 的 asLong 改名为 pack, 但本嵌套类自带的 asLong(int,int) 不受影响)。
             return ChunkPos.asLong(x, z);
         }
         

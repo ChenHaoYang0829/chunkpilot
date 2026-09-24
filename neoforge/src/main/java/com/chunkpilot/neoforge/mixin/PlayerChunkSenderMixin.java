@@ -86,8 +86,8 @@ public abstract class PlayerChunkSenderMixin {
             if (player == null) return; // 无法确定玩家 → 走 vanilla
 
             SpeedTracker speedTracker = cp.getOptimizer().getSpeedTracker();
-            int playerChunkX = playerChunkPos.x;
-            int playerChunkZ = playerChunkPos.z;
+            int playerChunkX = playerChunkPos.x();
+            int playerChunkZ = playerChunkPos.z();
 
             // 收集 pendingChunks 的 long 值
             if (pendingChunks.isEmpty()) return;

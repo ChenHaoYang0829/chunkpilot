@@ -374,7 +374,7 @@ public class ChunkLoadOptimizer {
         // 计算每个 chunk 的目标加载等级
         Map<Long, Integer> targetLevels = new HashMap<>();
         for (SectorCalculator.ChunkPos pos : newChunks) {
-            long l = pos.toLong();
+            long l = pos.toLong();   // SectorCalculator.ChunkPos 是本项目自己的类, 方法名未变
             int cx = SectorCalculator.ChunkPos.unpackX(l);
             int cz = SectorCalculator.ChunkPos.unpackZ(l);
             int dx = cx - playerChunkX;

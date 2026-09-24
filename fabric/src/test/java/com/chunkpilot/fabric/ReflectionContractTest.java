@@ -156,7 +156,27 @@ class ReflectionContractTest {
             // 简单健全性检查: 包含 package 字段 + 包含 mixin 列表字段
             assertTrue(content.contains("\"package\""), "mixins.json 缺 package 字段");
             assertTrue(content.contains("\"mixins\""), "mixins.json 缺 mixins 字段");
-            assertTrue(content.contains("\"refmap\""), "mixins.json 缺 refmap 字段 (loom 会找不到)");
+
+            // ============ 2026-09-24 (port/26.3): refmap 契约变更 ============
+            // 原断言是"**必须**含 refmap"。26.3 起 MC 官方 jar 不再混淆 (26.3.json 的 downloads
+            // 里连 client_mappings/server_mappings 都没有), Fabric 的 intermediary 变成 no-op
+            // (meta.fabricmc.net 对 26.3 返回 intermediary 0.0.0), 本模块因此改用
+            // `net.fabricmc.fabric-loom`(非 remap) 且**删掉了 mappings 行** —— 在这种配置下
+            // 根本不存在"编译期名 → 运行期名"的映射, 生成出来的 refmap 只会是一张自映射表,
+            // 没有任何作用。而"mixins.json 声明了 refmap 但内容与真实命名不符"恰恰是
+            // **mixin 静默失效**的经典成因, 所以 26.3 是**刻意不声明** refmap 的。
+            // 新契约(与 scripts/verify_artifacts.py 同口径): **声明了就必须存在, 不声明则不需要**。
+            java.util.regex.Matcher rm = java.util.regex.Pattern
+                .compile("\"refmap\"\\s*:\\s*\"([^\"]+)\"")
+                .matcher(content);
+            if (rm.find()) {
+                String refmap = rm.group(1);
+                assertNotNull(getClass().getResourceAsStream("/" + refmap),
+                    "mixins.json 声明了 refmap=" + refmap + " 但 jar 里没有该文件");
+                System.out.println("[P1.1] T21a: 声明了 refmap = " + refmap + " (存在)");
+            } else {
+                System.out.println("[P1.1] T21a: 未声明 refmap (26.3 无混淆/无映射, 符合预期)");
+            }
         } catch (Exception e) {
             fail("读 chunkpilot.mixins.json 失败: " + e.getMessage());
         }

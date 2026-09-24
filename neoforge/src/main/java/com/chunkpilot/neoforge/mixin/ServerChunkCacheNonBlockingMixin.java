@@ -1,7 +1,7 @@
-package com.chunkpilot.fabric.mixin;
+package com.chunkpilot.neoforge.mixin;
 
 import com.chunkpilot.ChunkPilot;
-import com.chunkpilot.fabric.util.NonBlockingStats;
+import com.chunkpilot.neoforge.util.NonBlockingStats;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ChunkHolder;
@@ -25,56 +25,42 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * v0.11.6 "主线程永不 park" —— 一次性掐掉所有阻塞式区块读取, 修"无 C2ME 会崩"和"墙".
+ * v0.11.6 "主线程永不 park" —— neoforge 移植 (main 作业书 §2 第 2 项)。
  *
- * ============================ 问题本质 (1.21.3 实证) ============================
- * `ServerChunkCache.getChunk(x, z, status, load)` 只要拿到的 ChunkHolder 还没到目标
- * 状态, 就会走:
- *     mainThreadProcessor.managedBlock(future::isDone)   // BlockableEventLoop
- *       → LockSupport.parkNanos                          // **主线程原地等待**
- * 而 `load = false` **并不豁免** —— 只要 holder 在可见表里就会等.
+ * **语义与 `com.chunkpilot.fabric.mixin.ServerChunkCacheNonBlockingMixin` 逐条等价**:
+ *   只在「服务端主线程 + 该区块已在可见表里 (票范围内) + 票级 <= 33 + 尚未 FULL」时,
+ *   把结果换成 {@link EmptyLevelChunk} (空气 + 空流体 + 无方块实体 + PLAINS 生物群系), 从而**不 park**。
  *
- * 更致命的是它是**正反馈死锁**: 主线程被 park 住 → `ChunkMap.tick()` /
- * `DistanceManager.runAllUpdates()` 这些"把生成任务推下去"的步骤全都停摆 →
- * 那个区块永远到不了目标状态 → park 永远不返回.
- * CP 的 FreezeDetector 现场取证: 玩家 9x9 (r=4) 全 NOT-FULL, 同期
- * `[Gen] queue=1 outstanding=1/32` —— **生成队列几乎空着**, 服务器不是算不过来,
- * 是把自己锁死了. 无 C2ME 实测单次 2.8~45 秒, 最后
- * `Server Watchdog: A single server tick took 60.00 seconds` → 强制关服.
+ * 其它情况一律走原版 (与 fabric 侧同一套判据):
+ *   - 非主线程 (worldgen worker) → 完全不动;
+ *   - holder == null (不在任何票范围内) → 不动 (原版 load=false 会立刻返回 null);
+ *   - 票级 > 33 (不在加载范围) → 不动 (原版返回 null);
+ *   - 已经 FULL → 不动 (原版不会阻塞);
+ *   - **仍然先调用 `getChunkFutureMainThread`** (补票 + 排生成任务) 再决定是否替换 ——
+ *     只判 isDone 而跳过这一步会丢掉"我需要这个区块"的压力, fabric 侧实测吞吐掉 3~4 倍。
  *
- * bench bot 抓到的 park 入口 (每修掉一个就冒下一个, 说明必须一刀切到底):
- *   ① handleMovePlayer → Entity.collide → collectColliders → Level.getChunkForCollisions
- *   ② handleMovePlayer → doCheckFallDamage → updateFluidHeight… → Level.getFluidState
- *   ③ ServerPlayer.tick → PlayerTrigger → LocationPredicate.matches → getNoiseBiome
- *   ④ (还会有更多)
- * 它们最终都收敛到同一个方法: **ServerChunkCache.getChunk**.
+ * 兼容性 (作业书 §3): 开关 = **已有的** `[protection] nonBlockingGetChunk` (默认 false ⇒ 默认=原版);
+ * 不新增配置键; 不吞异常 (catch Throwable 后放行原版); `require=0, expect=0` 软失败。
+ * 影响面严格限制在服务端主线程的"未就绪区块读取"这一条路径上, 不触碰任何已加载区块的返回值。
  *
- * ============================ 本 Mixin 做什么 ============================
- *   只在"服务端主线程 + 该区块已在可见表里 (玩家票范围内) + 尚未到 FULL"时,
- *   把结果换成 {@link EmptyLevelChunk} (空气 + 空流体 + 无方块实体 + 指定生物群系),
- *   从而**不 park**.
- *
- *   其它情况一律走原版:
- *     - 非主线程 (worldgen worker) → 完全不动;
- *     - holder == null (不在任何票范围内) → 不动 (原版 load=false 会立刻返回 null);
- *     - 票级 > 33 (不在加载范围) → 不动 (原版会返回 null);
- *     - 已经 FULL → 不动 (原版不会阻塞).
- *
- * 语义影响: "正在生成中的区块"对读取方等于不存在 —— 与原版**客户端**一致.
- *   代价: 极端落后时实体可能短暂穿过正在生成的区块/流体判定短暂失效,
- *   而原版在这种场合的结局是 park 十几秒乃至崩服, 这是严格更优的取舍.
- *
- * 只影响服务端; 客户端本来就不阻塞.
+ * javap 依据 (1.21.9/1.21.10/1.21.11 一致):
+ *   ServerChunkCache.getChunk(int,int,ChunkStatus,boolean) -> ChunkAccess
+ *   ServerChunkCache.getVisibleChunkIfPresent(long) -> ChunkHolder (private)
+ *   ServerChunkCache.mainThread : Thread (package-private final)
+ *   ServerChunkCache.getChunkFutureMainThread(int,int,ChunkStatus,boolean) (private)
+ *   ChunkHolder.getTicketLevel() -> int ; ChunkHolder.getFullChunkFuture() -> CompletableFuture<ChunkResult<LevelChunk>>
+ *   EmptyLevelChunk(Level, ChunkPos, Holder<Biome>)
  */
 @Mixin(ServerChunkCache.class)
 public abstract class ServerChunkCacheNonBlockingMixin {
 
-    /** 已缓存的空区块 (按 level + chunkPos). 只在危机路径上使用, 数量很小. */
+    /** 已缓存的空区块 (按 level identity + chunkPos). 只在危机路径上使用, 数量很小. */
     private static final Map<Long, LevelChunk> EMPTY_CACHE = new ConcurrentHashMap<>();
     private static final int EMPTY_CACHE_MAX = 512;
     private static final int FULL_CHUNK_LEVEL = 33;
 
-    @Inject(method = "getChunk", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getChunk", at = @At("HEAD"), cancellable = true,
+            require = 0, expect = 0)
     private void chunkpilot$nonBlockingGetChunk(int chunkX, int chunkZ, ChunkStatus status,
                                                 boolean load,
                                                 CallbackInfoReturnable<ChunkAccess> cir) {
@@ -89,23 +75,21 @@ public abstract class ServerChunkCacheNonBlockingMixin {
             if (Thread.currentThread() != acc.chunkpilot$mainThread()) return;
 
             ChunkHolder holder = acc.chunkpilot$getVisibleChunkIfPresent(ChunkPos.pack(chunkX, chunkZ));
-            if (holder == null) return;                     // 原版会立刻返回 null, 不阻塞
-            if (holder.getTicketLevel() > FULL_CHUNK_LEVEL) return; // 不在加载范围, 原版返回 null
+            if (holder == null) return;                             // 原版会立刻返回 null, 不阻塞
+            if (holder.getTicketLevel() > FULL_CHUNK_LEVEL) return;  // 不在加载范围, 原版返回 null
 
             CompletableFuture<ChunkResult<LevelChunk>> full = holder.getFullChunkFuture();
             if (full.isDone()) {
                 ChunkResult<LevelChunk> res = full.getNow(null);
                 if (res != null && res.isSuccess() && res.orElse(null) != null) {
-                    return;                                  // 已经 FULL → 原版不会阻塞
+                    return;                                         // 已经 FULL → 原版不会阻塞
                 }
             }
 
             // ★ 关键: 先把原版那一步"取 future"执行掉 —— 它会补票 + 把生成任务排进调度器.
-            //   只判 isDone 而跳过这一步 = 顺手丢掉了"我需要这个区块"的压力,
-            //   实测会让服务器直接空转 (Worker 线程全 idle), 吞吐掉 3~4 倍.
             CompletableFuture<ChunkResult<ChunkAccess>> fut =
                 acc.chunkpilot$getChunkFutureMainThread(chunkX, chunkZ, status, load);
-            if (fut != null && fut.isDone()) return;         // 已就绪 → 走原版 (join 立即返回)
+            if (fut != null && fut.isDone()) return;                // 已就绪 → 走原版 (join 立即返回)
 
             if (self.getLevel() == null) return;
             ServerLevel level = (ServerLevel) self.getLevel();
@@ -119,7 +103,7 @@ public abstract class ServerChunkCacheNonBlockingMixin {
 
     private static volatile long cpLastLogSecond = 0L;
 
-    /** 诊断: 把"是谁在阻塞读区块"打出来 (每 5 秒最多一次). */
+    /** 诊断: 把"是谁在阻塞读区块"打出来 (每 5 秒最多一次). 也是开关生效的日志证据. */
     private static void chunkpilot$maybeLogStack(int x, int z, ChunkStatus status) {
         try {
             long sec = System.currentTimeMillis() / 5000L;

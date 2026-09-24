@@ -1,12 +1,15 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.16.3'
+    // 26.3: 从 net.fabricmc.fabric-loom 1.16.3 升到 1.17.21 (Fabric 官方要求 Loom 1.17 + Gradle 9.6)。
+    //   这里**没有**从 fabric-loom-remap 换成 fabric-loom 的问题 —— main 用的本来就是非 remap 的
+    //   `net.fabricmc.fabric-loom`, 而它正是 26.3 示例工程用的那个。
+    id 'net.fabricmc.fabric-loom' version '1.17.21'
     id 'java'
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabMC = "26.3"
+def fabLoader = "0.19.5"
+def fabApi = "0.161.0+26.3"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }
@@ -15,16 +18,16 @@ repositories {
 }
 dependencies {
     minecraft "com.mojang:minecraft:${fabMC}"
-    // v0.5.1: 恢复 official mappings (1.21.3 fabric 默认)
-    // 原因: v0.5.1 删除原本依赖 yarn 名的 chunk_send/load mixin, 改为完全主动驱动
-    //       所有 onPlayerChunkUpdate/getChunkToSend 调用都去掉, 改为每 tick 主动遍历玩家
-    //       mixin 只保留 client 端 (ChunkRenderDispatcher, 警告但不报错)
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
-    // 2026-09-24 死代码盘点: 这行显式 pin 是多余的 —— fabric-api 聚合包已包含 networking-api-v1,
-    //   且该 pin 的版本 (4.3.3) 与 fabric-api 版本不一致, 注释"1.21.2 需要"也已过时 (模块早已是 1.21.3)。
-    //   实测删除后 :fabric:build 仍 BUILD SUCCESSFUL。networking 能力本身由 fabric-api 提供, 不受影响。
+    // ============================ 26.3: mappings 整行删除 ============================
+    // MC 自 26.1 起官方不再混淆: server.jar 内层就是 net/minecraft/server/level/ChunkMap.class,
+    // 26.3.json 的 downloads 里连 client_mappings/server_mappings 都没有, 而
+    // meta.fabricmc.net/v2/versions/loader/26.3 返回 `intermediary 0.0.0` (no-op)、yarn 为空。
+    // 所以 `mappings loom.officialMojangMappings()` 在 26.3 上**必然失败**, 而且本来也不需要。
+    // Fabric 官方 26.3 示例工程 (FabricMC/fabric-example-mod @ 26.3) 同样没有这一行。
+    // 同时 modImplementation → implementation (非 remap 语义下等同, 示例工程用后者)。
+    implementation "net.fabricmc:fabric-loader:${fabLoader}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
+    // 2026-09-24 死代码盘点: 这里原有 fabric-networking-api-v1 的显式 pin, 已删 (fabric-api 聚合包已含)。
 
     // P1.1: 静态反射检查 — fabric 测试也要 JUnit
     testImplementation platform('org.junit:junit-bom:5.10.2')
@@ -38,11 +41,13 @@ loom {
         jvmArgs '-Xmx16G', '-Xms4G'
     }
 }
-// 2026-08-01: loom 1.16+ 默认不启用 mixin AP, 需要显式开启才能生成 refmap
+// 2026-09-24 (26.3): 关闭 legacy mixin AP / refmap 生成。
+//   原来这里是 useLegacyMixinAp=true + refmapTargetNamespace="intermediary"。
+//   26.3 的 intermediary 是**空映射**, 生成的 refmap 只会是自映射表 —— 没有任何作用;
+//   而 "mixins.json 声明了 refmap 却与实际命名不符" 正是 mixin **静默失效**的经典成因
+//   (参见 PORTING_REPORT §7.4d)。所以这里关掉 AP, 并把两个 mixins.json 里的 "refmap" 键删掉。
 loom.mixin {
-    useLegacyMixinAp = true
-    refmapTargetNamespace = "intermediary"
-    defaultRefmapName = "chunkpilot.refmap.json"
+    useLegacyMixinAp = false
 }
 // 引用 common 源码 (不依赖 common 项目, 避免 architectury classpath 污染)
 sourceSets {
@@ -54,7 +59,7 @@ sourceSets {
             srcDir project(':common').sourceSets.main.resources
         }
     }
-    // P1.1: 静态反射测试 — 需要 loom 把 remap 后 MC 类加入 test classpath
+    // P1.1: 静态反射测试 — 需要 loom 把 MC 类加入 test classpath
     test {
         java.srcDir 'src/test/java'
         resources.srcDir 'src/test/resources'
@@ -63,8 +68,12 @@ sourceSets {
     }
 }
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    // 26.3 需要 Java 25 (version.json: "java_version": 25, "java_component": "java-runtime-epsilon")
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
 }
 
 // P1.1: 静态反射测试 task 配置
@@ -76,15 +85,13 @@ test {
         exceptionFormat = 'full'
     }
 }
-// 2026-08-01: 1.21.2 fabric-api 拆分了 client 模块, 显式加 client networking
-dependencies {
-}
 
 // 2026-09-24: 让元数据里的 MC 版本从构建变量展开, 而不是手写 ——
 //   手写极容易漏改(实测出现过"1.21.5 的 jar 里写着 minecraft=1.21.3"⇒ 在 1.21.5 上被 loader 直接拒绝加载)。
 processResources {
     inputs.property "mcVersion", fabMC
+    inputs.property "modVersion", project.version
     filesMatching("fabric.mod.json") {
-        expand(mcVersion: fabMC)
+        expand(mcVersion: fabMC, modVersion: project.version)
     }
 }

@@ -1,15 +1,18 @@
 plugins {
-    id 'dev.architectury.loom'
+    id 'dev.architectury.loom-no-remap'
 }
 
 dependencies {
     // 依赖 fabric loader 仅用于 @Environment 注解
-    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
+    // 26.3: 不再用 modImplementation —— MC 未混淆 ⇒ 没有"把依赖从 intermediary 重映射"这回事,
+    //   非 remap 语义下 modImplementation == implementation (Fabric 26.3 示例工程也是这么写的)。
+    implementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
 
     // 2026-08-01: common 源码不含 MC 直接类型引用 (用 PlatformAbstraction 抽象层)
-    // 但 loom 编译需要 MC, 这里给 fabric 的 1.21.2
-    minecraft "com.mojang:minecraft:1.21.2"
-    mappings loom.officialMojangMappings()
+    // 2026-09-24 (26.3): 这里原先是硬编码的 1.21.2 + loom.officialMojangMappings()。
+    //   26.3 官方 jar 已未混淆, version.json 里**没有** client_mappings ⇒ mappings 行必须删除,
+    //   MC 版本也改成 rootProject.minecraftVersion, 免得以后再漏改。
+    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
 
     // P0: 单元测试 — common 模块零 MC 引用, 测试也只用 JUnit + chunkpilot.* 类
     testImplementation platform('org.junit:junit-bom:5.10.2')

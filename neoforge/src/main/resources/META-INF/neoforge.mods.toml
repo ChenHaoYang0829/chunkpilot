@@ -1,11 +1,11 @@
 modLoader = "javafml"
-loaderVersion = "[4,)"
+loaderVersion = "[12,)"   # NeoForge 26.3 用 fancymodloader 12.0.0 (pom 实证)
 license = "MIT"
 issueTrackerURL = ""
 
 [[mods]]
 modId = "chunkpilot"
-version = "0.5.0-alpha"
+version = "${modVersion}"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''
@@ -15,7 +15,7 @@ Smart chunk loading and rendering optimization for high-speed travel (elytra, tr
 [[dependencies.chunkpilot]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
+versionRange = "[26.3,)"
 ordering = "NONE"
 side = "BOTH"
 

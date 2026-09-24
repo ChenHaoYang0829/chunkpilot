@@ -2,15 +2,20 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.chunkpilot.neoforge.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "refmap": "chunkpilot.refmap.json",
+  "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "CheckExtensibleEnumsMixin",
+    "ChunkMapGenerationMixin",
     "ChunkMapMixin",
+    "ChunkMapTrackingViewMixin",
     "ConnectionNetTrackerMixin",
+    "LevelNonBlockingReadMixin",
     "PlayerChunkSenderMixin",
     "PlayerChunkSenderSendMixin",
-    "ServerPlayerMixin",
-    "CheckExtensibleEnumsMixin"
+    "ServerChunkCacheAccessor",
+    "ServerChunkCacheNonBlockingMixin",
+    "ServerGamePacketListenerMoveMixin",
+    "ServerPlayerMixin"
   ],
   "client": [],
   "injectors": {
