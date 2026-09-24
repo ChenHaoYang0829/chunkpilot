@@ -1,3 +1,30 @@
+// =====================================================================================
+// 2026-09-24  port/1.20.1 说明: **这个模块在 1.20.1 上没有交付产物**, 而且它不是 1.20.1 的模块。
+//
+// 本分支的 neoforge 模块仍然指向 main 的 1.21.1 (rootProject.minecraftVersion/neoforgeVersion),
+// 因为把 NeoForge 1.20.1 做成能用的产物**不是一个改坐标就能完成的事**。实测结论 (证据见
+// /data/cp-port/artifacts/1.20.1/REPORT.md §7-⑥):
+//   1) `net.neoforged:forge:1.20.1-47.1.106` 的包命名空间仍是 `net.minecraftforge.*`
+//      (universal jar 里 1156 个 class, `net/neoforged/` **0 个**) ⇒ 整个模块要改包名;
+//   2) 1.20.1 的生产运行期是 **SRG 成员名 + Mojmap 类名**
+//      (javap universal jar: `Method net/minecraft/server/MinecraftServer.m_129843_`)
+//      ⇒ main 那套 "remapJar 禁用 + 手写 refmap" 在 1.20.1 上不可能work, 必须要 SRG 重混淆;
+//   3) 唯一正规工具链 `net.neoforged.gradle.userdev`: 7.0.171 在 Gradle 9.6.1 上直接
+//      `NoSuchMethodError: org.gradle.util.internal.GUtil.toCamelCase`; **7.1.39 可以跑通**
+//      (neoForm recompile 全过), 但它给 1.20.1 的开发环境是 **srg channel** (成员名 `f_143034_`),
+//      而本项目源码用 Mojang 成员名 ⇒ 需要正确的 official-mappings 配置 (我试了
+//      `minecraft { mappings { official() } }`, 强制 rerun 后仍是 srg, 没找到正确写法);
+//   4) 网络层要按 Forge 47 的 `SimpleChannel` 重写 (没有 `RegisterPayloadHandlersEvent`/
+//      `PacketDistributor`); `PlayerChunkSender*` 两个 mixin 在 1.20.1 根本不存在;
+//      `CheckExtensibleEnumsMixin` 的目标是 NeoForge 内部类, Forge 47 里没有;
+//   5) 代理对 neoforged maven / Maven Central 的大文件反复 `Read timed out`,
+//      我是靠手工下载 + 塞 Gradle 模块缓存才把 NeoGradle 拉起来的 —— 再往下要做
+//      NeoForge 1.20.1 服务端安装 (数百 MB) 可靠性很低。
+// ⇒ 结论: **本分支只交付 fabric 产物** (`chunkpilot-fabric-1.20.1.jar`)。
+//   若后续要补 neoforge 1.20.1, 起点就是上面第 3 条的 official-mappings 配置。
+//   ⚠ 千万不要把本模块产出的 jar 当成 1.20.1 产物 —— 它是给 1.21.1 编译的。
+// =====================================================================================
+
 repositories {
     maven { url = file("../.local-maven-repo") }
 }

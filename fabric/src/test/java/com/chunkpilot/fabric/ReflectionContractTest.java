@@ -114,9 +114,9 @@ class ReflectionContractTest {
         Class<?> cacheClass = loadMcClass("net.minecraft.server.level.ServerChunkCache");
         assertNotNull(cacheClass, "ServerChunkCache 类未找到");
 
-        // 1.21.3 official: ChunkStatus 在 net.minecraft.world.level.chunk.status.ChunkStatus
-        //   (多一层 status 包, 是从 1.20.5/1.21 重构后的结构)
-        Class<?> chunkStatusClass = loadMcClass("net.minecraft.world.level.chunk.status.ChunkStatus");
+        // 1.20.1 (javap 实证): ChunkStatus 在 net.minecraft.world.level.chunk.ChunkStatus
+        //   (1.21.2+ 才挪到 ...chunk.status.ChunkStatus)
+        Class<?> chunkStatusClass = loadMcClass("net.minecraft.world.level.chunk.ChunkStatus");
         assertNotNull(chunkStatusClass, "ChunkStatus 类未找到 — 可能是 FQN 错了");
 
         Method m = findMethod(cacheClass, "getChunk", int.class, int.class, chunkStatusClass, boolean.class);

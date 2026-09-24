@@ -5,7 +5,6 @@ import com.chunkpilot.fabric.util.NonBlockingStats;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ChunkHolder;
-import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -14,7 +13,7 @@ import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.EmptyLevelChunk;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.ChunkStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -92,10 +91,13 @@ public abstract class ServerChunkCacheNonBlockingMixin {
             if (holder == null) return;                     // 原版会立刻返回 null, 不阻塞
             if (holder.getTicketLevel() > FULL_CHUNK_LEVEL) return; // 不在加载范围, 原版返回 null
 
-            CompletableFuture<ChunkResult<LevelChunk>> full = holder.getFullChunkFuture();
-            if (full.isDone()) {
-                ChunkResult<LevelChunk> res = full.getNow(null);
-                if (res != null && res.isSuccess() && res.orElse(null) != null) {
+            // 1.20.1: getFullChunkFuture() 返回 CompletableFuture<Either<...>> (无 ChunkResult)
+            CompletableFuture<com.mojang.datafixers.util.Either<LevelChunk,
+                ChunkHolder.ChunkLoadingFailure>> full = holder.getFullChunkFuture();
+            if (full != null && full.isDone()) {
+                com.mojang.datafixers.util.Either<LevelChunk, ChunkHolder.ChunkLoadingFailure> res =
+                    full.getNow(null);
+                if (res != null && res.left().isPresent() && res.left().get() != null) {
                     return;                                  // 已经 FULL → 原版不会阻塞
                 }
             }
@@ -103,7 +105,8 @@ public abstract class ServerChunkCacheNonBlockingMixin {
             // ★ 关键: 先把原版那一步"取 future"执行掉 —— 它会补票 + 把生成任务排进调度器.
             //   只判 isDone 而跳过这一步 = 顺手丢掉了"我需要这个区块"的压力,
             //   实测会让服务器直接空转 (Worker 线程全 idle), 吞吐掉 3~4 倍.
-            CompletableFuture<ChunkResult<ChunkAccess>> fut =
+            CompletableFuture<com.mojang.datafixers.util.Either<ChunkAccess,
+                ChunkHolder.ChunkLoadingFailure>> fut =
                 acc.chunkpilot$getChunkFutureMainThread(chunkX, chunkZ, status, load);
             if (fut != null && fut.isDone()) return;         // 已就绪 → 走原版 (join 立即返回)
 
@@ -148,9 +151,11 @@ public abstract class ServerChunkCacheNonBlockingMixin {
         LevelChunk cached = EMPTY_CACHE.get(key);
         if (cached != null) return cached;
         if (EMPTY_CACHE.size() > EMPTY_CACHE_MAX) EMPTY_CACHE.clear();
+        // 1.20.1: RegistryAccess.lookupOrThrow(...).getOrThrow(...) 是 1.21+ API;
+        //   1.20.1 用 registryOrThrow(...).getHolderOrThrow(...) (javap 实证).
         Holder<Biome> biome = level.registryAccess()
-            .lookupOrThrow(Registries.BIOME)
-            .getOrThrow(Biomes.PLAINS);
+            .registryOrThrow(Registries.BIOME)
+            .getHolderOrThrow(Biomes.PLAINS);
         LevelChunk chunk = new EmptyLevelChunk(level, new ChunkPos(chunkX, chunkZ), biome);
         EMPTY_CACHE.put(key, chunk);
         return chunk;

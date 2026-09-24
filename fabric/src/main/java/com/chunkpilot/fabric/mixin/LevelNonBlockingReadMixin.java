@@ -4,7 +4,6 @@ import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.fabric.util.MoveGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ChunkHolder;
-import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BlockGetter;
@@ -66,19 +65,32 @@ import java.util.concurrent.CompletableFuture;
  *   就是 park 十几秒乃至崩服, 这是严格更优的取舍.
  *
  * 只作用于 ServerLevel (客户端 Level 本来就不阻塞).
+ *
+ * ============================ 1.20.1 移植核实 (javap 实证) ============================
+ *   `Level.getChunkForCollisions(int,int)` **在 1.20.1 存在** (返回 BlockGetter),
+ *   `Level.getBlockState(BlockPos)` / `Level.getFluidState(BlockPos)` 也在 →
+ *   三个注入点全部原样保留, 无需降级. 唯一差异是 ChunkResult → Either (见 isFullyReady).
  */
 @Mixin(Level.class)
 public abstract class LevelNonBlockingReadMixin {
 
-    /** 该区块是否**已经**生成到 FULL (全程不阻塞: 一次 map 查找 + CompletableFuture.getNow). */
+    /**
+     * 该区块是否**已经**生成到 FULL (全程不阻塞: 一次 map 查找 + CompletableFuture.getNow).
+     *
+     * 1.20.1 移植 (javap 实证): `ChunkHolder.getFullChunkFuture()` 返回
+     *   `CompletableFuture<Either<LevelChunk, ChunkHolder$ChunkLoadingFailure>>`,
+     *   **没有** 1.21.2+ 的 `ChunkResult` 包装 → "成功"判定改为 `either.left().isPresent()`.
+     */
     private static boolean chunkpilot$isFullyReady(ServerLevel level, int chunkX, int chunkZ) {
         ChunkHolder holder = ((ServerChunkCacheAccessor) (ServerChunkCache) level.getChunkSource())
             .chunkpilot$getVisibleChunkIfPresent(ChunkPos.asLong(chunkX, chunkZ));
         if (holder == null) return false;
-        CompletableFuture<ChunkResult<LevelChunk>> full = holder.getFullChunkFuture();
-        if (!full.isDone()) return false;
-        ChunkResult<LevelChunk> res = full.getNow(null);
-        return res != null && res.isSuccess() && res.orElse(null) != null;
+        CompletableFuture<com.mojang.datafixers.util.Either<LevelChunk,
+            ChunkHolder.ChunkLoadingFailure>> full = holder.getFullChunkFuture();
+        if (full == null || !full.isDone()) return false;
+        com.mojang.datafixers.util.Either<LevelChunk, ChunkHolder.ChunkLoadingFailure> res =
+            full.getNow(null);
+        return res != null && res.left().isPresent() && res.left().get() != null;
     }
 
     private static boolean chunkpilot$enabled() {

@@ -4,6 +4,7 @@ import com.chunkpilot.platform.PlatformAbstraction;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
@@ -163,9 +164,9 @@ public class FabricPlatform implements PlatformAbstraction {
     public double getCurrentMspt() {
         MinecraftServer server = currentServer;
         if (server == null) return 0;
-        // Mojang 1.21: server.getCurrentServerTime() 不直接给 MSPT
-        // 用 averageTickTimeNanos / 1e6
-        return server.getAverageTickTimeNanos() / 1_000_000.0;
+        // 1.20.1 (javap 实证): MinecraftServer **没有** getAverageTickTimeNanos(),
+        //   只有 public float getAverageTickTime() (已是毫秒) 与 public final long[] tickTimes (纳秒).
+        return server.getAverageTickTime();
     }
     
     @Override
@@ -234,6 +235,13 @@ public class FabricPlatform implements PlatformAbstraction {
     /**
      * v0.11.8: 真正的"已生成到 FULL"判定 (非阻塞).
      * 用 ChunkHolder.fullChunkFuture.isDone() —— 只有 FULL 完成才 done。
+     *
+     * 1.20.1 移植说明 (javap 实证):
+     *   - `ChunkHolder.getFullChunkFuture()` 在 1.20.1 返回
+     *     `CompletableFuture<Either<LevelChunk, ChunkHolder$ChunkLoadingFailure>>`
+     *     —— **没有** 1.21.2+ 的 `ChunkResult` 包装, 所以"成功"判定是 `either.left().isPresent()`.
+     *   - 1.20.1 的 ServerChunkCache **没有** getChunkHolder(long) (旧实现按名字反射必然恒 false);
+     *     真实入口是 private 的 `getVisibleChunkIfPresent(long)`, 这里反射拿一次并缓存.
      */
     @Override
     public boolean isChunkReadyFull(int worldId, int chunkX, int chunkZ) {
@@ -243,19 +251,24 @@ public class FabricPlatform implements PlatformAbstraction {
             ServerLevel world = findWorld(server, worldId);
             if (world == null) return false;
             long posLong = ChunkPos.asLong(chunkX, chunkZ);
-            // v0.11.9 修复: 原来用反射找 getChunkHolder/getFullChunkFuture —— 前者非 public,
-            //   反射恒失败 ⇒ isChunkReadyFull **恒返回 false** (即"永远没生成完")。
-            //   现在用 mixin accessor 拿 ChunkHolder, 再直接读 fullChunkFuture (全程非阻塞)。
+            // main 的结构性修复 (3ccbf0c) 必须保留: 原来用运行期反射找 getChunkHolder/getFullChunkFuture,
+            //   而 fabric 运行期是 **intermediary 命名** (method_14131/field_17253), 可读名反射必然失败
+            //   ⇒ isChunkReadyFull 恒返回 false。改用 mixin accessor (@Invoker 会被 loom 正确 remap)。
             net.minecraft.server.level.ChunkHolder holder =
                 ((com.chunkpilot.fabric.mixin.ServerChunkCacheAccessor) world.getChunkSource())
                     .chunkpilot$getVisibleChunkIfPresent(posLong);
             if (holder == null) return false;
-            java.util.concurrent.CompletableFuture<net.minecraft.server.level.ChunkResult<
-                net.minecraft.world.level.chunk.LevelChunk>> fut = holder.getFullChunkFuture();
-            if (!fut.isDone()) return false;
-            net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.LevelChunk> res =
-                fut.getNow(null);
-            return res != null && res.isSuccess() && res.orElse(null) != null;
+            // 1.20.1 适配 (port/1.20.1): 1.20.1 **没有** ChunkResult,
+            //   getFullChunkFuture() 返回 CompletableFuture<Either<LevelChunk, ChunkLoadingFailure>>,
+            //   "成功"判定 = either.left().isPresent()。语义与 main 的 res.isSuccess() 等价。
+            java.util.concurrent.CompletableFuture<com.mojang.datafixers.util.Either<
+                net.minecraft.world.level.chunk.LevelChunk,
+                net.minecraft.server.level.ChunkHolder.ChunkLoadingFailure>> full =
+                holder.getFullChunkFuture();
+            if (full == null || !full.isDone()) return false;
+            com.mojang.datafixers.util.Either<net.minecraft.world.level.chunk.LevelChunk,
+                net.minecraft.server.level.ChunkHolder.ChunkLoadingFailure> res = full.getNow(null);
+            return res != null && res.left().isPresent() && res.left().get() != null;
         } catch (Throwable t) {
             return false;
         }
@@ -264,8 +277,11 @@ public class FabricPlatform implements PlatformAbstraction {
     @Override
     public int getShallowChunkLevel(String statusName) {
         try {
-            net.minecraft.world.level.chunk.status.ChunkStatus status =
-                net.minecraft.world.level.chunk.status.ChunkStatus.byName(statusName);
+            // 1.20.1 (javap 实证): ChunkStatus 在 net.minecraft.world.level.chunk.ChunkStatus
+            //   (1.21.2+ 才挪到 ...chunk.status.ChunkStatus)
+            //   ChunkLevel.byStatus(ChunkStatus) 在 1.20.1 存在 → 浅层加载等级可精确表达.
+            net.minecraft.world.level.chunk.ChunkStatus status =
+                net.minecraft.world.level.chunk.ChunkStatus.byName(statusName);
             if (status == null) return 31;
             return net.minecraft.server.level.ChunkLevel.byStatus(status);
         } catch (Throwable t) {
@@ -326,11 +342,12 @@ public class FabricPlatform implements PlatformAbstraction {
             if (level == null) return false;
 
             // 目标状态: 默认 FULL (安全)
-            net.minecraft.world.level.chunk.status.ChunkStatus target =
-                net.minecraft.world.level.chunk.status.ChunkStatus.FULL;
+            // 1.20.1: ChunkStatus 在 net.minecraft.world.level.chunk.ChunkStatus (javap 实证)
+            net.minecraft.world.level.chunk.ChunkStatus target =
+                net.minecraft.world.level.chunk.ChunkStatus.FULL;
             if (targetStatus != null && !targetStatus.isEmpty()) {
-                net.minecraft.world.level.chunk.status.ChunkStatus parsed =
-                    net.minecraft.world.level.chunk.status.ChunkStatus.byName(targetStatus);
+                net.minecraft.world.level.chunk.ChunkStatus parsed =
+                    net.minecraft.world.level.chunk.ChunkStatus.byName(targetStatus);
                 if (parsed != null) target = parsed;
             }
 
@@ -437,14 +454,36 @@ public class FabricPlatform implements PlatformAbstraction {
     /**
      * v0.11.7 i18n: 玩家客户端语言 (来自 `serverbound/client_information`).
      * 1.21.3 official 映射: ServerPlayer.clientInformation() → ClientInformation.language().
+     *
+     * 1.20.1 降级 (javap 实证): `ClientInformation` / `clientInformation()` 都是 1.20.2+ 才有的
+     *   (1.20.1 只把 `ServerboundClientInformationPacket` 交给 ServerPlayer.updateOptions,
+     *    **不保存 language 字段**, ServerPlayer 上既无 language 字段也无 getLanguage()).
+     *   → 返回 null, i18n 回退到服务端全局语言 (功能可用, 只是无法做到"按玩家语言").
+     *   用反射兜底: 万一某整合/前置提供了 language 字段, 仍能取到.
      */
     @Override
     public String getPlayerLanguage(UUID playerId) {
         try {
             ServerPlayer player = PLAYER_CACHE.get(playerId);
             if (player == null) return null;
-            var info = player.clientInformation();
-            return info == null ? null : info.language();
+            try {
+                java.lang.reflect.Method m = player.getClass().getMethod("getLanguage");
+                Object v = m.invoke(player);
+                if (v instanceof String s) return s;
+            } catch (Throwable ignored) { }
+            try {
+                Class<?> c = player.getClass();
+                while (c != null) {
+                    try {
+                        java.lang.reflect.Field f = c.getDeclaredField("language");
+                        f.setAccessible(true);
+                        Object v = f.get(player);
+                        if (v instanceof String s) return s;
+                    } catch (NoSuchFieldException ignored) { }
+                    c = c.getSuperclass();
+                }
+            } catch (Throwable ignored) { }
+            return null;
         } catch (Throwable t) {
             return null;
         }

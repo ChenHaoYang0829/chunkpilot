@@ -3,8 +3,10 @@
   "id": "chunkpilot",
   "version": "0.10.10-alpha",
   "name": "ChunkPilot",
-  "description": "Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).",
-  "authors": ["ChunkPilot Team"],
+  "description": "Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships). [MC 1.20.1 port]",
+  "authors": [
+    "ChunkPilot Team"
+  ],
   "contact": {},
   "license": "MIT",
   "icon": "assets/chunkpilot/icon.png",
