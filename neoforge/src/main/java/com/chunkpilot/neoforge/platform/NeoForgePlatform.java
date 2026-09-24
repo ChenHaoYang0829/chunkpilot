@@ -463,4 +463,157 @@ public class NeoForgePlatform implements PlatformAbstraction {
         org.slf4j.LoggerFactory.getLogger("ChunkPilot").info(
             "[CMD] {} executed: {}", executor, message);
     }
+
+    // ==================================================================================
+    // v0.11.9 (专项推广: 与 port/1.21.9 `43b49c8` 同口径):
+    //     isChunkLoaded / isChunkReadyFull / probeChunk / getOverworldId
+    //
+    // 为什么必须补 (main `63b6f8c` / PORTING_REPORT §7.5.1 记录的缺口):
+    //   这四个方法 NeoForgePlatform **一个都没覆写**, 于是走 PlatformAbstraction 的默认实现:
+    //     isChunkLoaded    → 恒 false ⇒ GenerationScheduler 的"跳过已加载区块"优化在 neoforge 上
+    //                        完全失效(对已生成的区块反复排队/请求), isChunkReadyFull 也跟着恒 false;
+    //     probeChunk       → 返回 "unavailable" ⇒ `/chunkpilot probe` 在 neoforge 上没有输出;
+    //     getOverworldId   → 恒 0。
+    //   后果: bench_run 的**服务端权威检查** mspt.csv 里 lead_loaded_srv **整列缺失** ⇒
+    //   neoforge 无法被"服务端探针"这个行为判据独立验收(只能靠 far_ahead 与 vanilla 对照间接判断);
+    //   另外"跳过已加载"失效是**实打实的性能损失**(1.21.9 量测: 同代码 NF 巡航 MSPT 6.35/6.93ms → 3.46/3.10ms)。
+    //
+    // 本版本 javap 实证 (minecraft-merged 官方映射 jar):
+    //   `ServerChunkCache.hasChunk(int,int)`                 → **public** ⇒ 直接调用, 无需反射/accessor
+    //                                                          (该方法 1.20.1~1.21.11 均存在且 public)
+    //   `ServerChunkCache.getVisibleChunkIfPresent(long)`     → private ⇒ 取 ChunkHolder 只能按名反射;
+    //        NeoForge 运行期就是 **Mojang 官方成员名**, 所以按名反射可行
+    //        (fabric 侧运行期是 intermediary, 因此那边必须走 mixin accessor);
+    //        本版本已无 `getChunkHolder(long)` ⇒ 不要用它。
+    //   `ChunkHolder.getTicketLevel()`                       → public
+    //   反射失败**只降级票等级一项**, 绝不让 probe 抛异常。
+    //
+    // 刻意**不输出** cpRequested/cpTicketed 两列: NeoForge 没有 fabric 那套
+    //   请求/发票跟踪集合(ChunkMapTrackingView / cpRequested 集合), 硬填 false 只会让
+    //   bench_run 的 `lead_cp_ticketed` 变成"假信号"(恒 0), 不如留空 = 无数据。
+    // ==================================================================================
+
+    @Override
+    public boolean isChunkLoaded(int worldId, int chunkX, int chunkZ) {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return false;
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return false;
+            // hasChunk = "ChunkHolder 存在且票等级 <= FULL(33)"; 只查表, 不触发加载/生成
+            return level.getChunkSource().hasChunk(chunkX, chunkZ);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    @Override
+    public boolean isChunkReadyFull(int worldId, int chunkX, int chunkZ) {
+        // 与 fabric 侧同口径: hasChunk 为真即表示已到 FULL 边界 (票等级 <= 33)。
+        // 更严格的判定需要 ChunkHolder.getFullChunkFuture, 而它只能反射取 ⇒ 失败面不值得,
+        // 该值只用于诊断/探针(与 1.21.9 参考实现一致)。
+        return isChunkLoaded(worldId, chunkX, chunkZ);
+    }
+
+    @Override
+    public int getOverworldId() {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return 0;
+            // 与 findWorld() 的 worldId 口径一致 (hashCode)
+            return server.overworld().hashCode();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    @Override
+    public String probeChunk(int worldId, int chunkX, int chunkZ) {
+        return probeChunk(worldId, chunkX, chunkZ, null);
+    }
+
+    @Override
+    public String probeChunk(int worldId, int chunkX, int chunkZ, UUID viewerId) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return com.chunkpilot.i18n.I18n.trFor(viewerId,
+                "chunkpilot.probe.server_not_bound");
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return com.chunkpilot.i18n.I18n.trFor(viewerId,
+                "chunkpilot.probe.world_not_found", worldId);
+
+            long posLong = ChunkPos.asLong(chunkX, chunkZ);
+            boolean loaded = isChunkLoaded(worldId, chunkX, chunkZ);
+            boolean fullReady = isChunkReadyFull(worldId, chunkX, chunkZ);
+            int ticketLevel = -1;
+            boolean holderPresent = false;
+            String statusName = "?";
+            Object holder = chunkpilot$visibleHolder(level, posLong);
+            if (holder instanceof net.minecraft.server.level.ChunkHolder ch) {
+                holderPresent = true;
+                ticketLevel = ch.getTicketLevel();
+                statusName = chunkpilot$levelTypeName(ticketLevel);
+            }
+
+            int pcx = 0, pcz = 0;
+            double best = -1;
+            for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+                if (sp.level() != level) continue;
+                int cx = sp.chunkPosition().x, cz = sp.chunkPosition().z;
+                double d = Math.hypot(chunkX - cx, chunkZ - cz);
+                if (best < 0 || d < best) { best = d; pcx = cx; pcz = cz; }
+            }
+
+            // 输出格式**复刻 FabricPlatform.probeChunk**: bench_run.py 按 loaded= / ticketLevel= /
+            //   levelType= 这些键做正则解析, 键名/顺序必须一致。
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.line",
+                chunkX, chunkZ, chunkX << 4, chunkZ << 4, loaded, holderPresent,
+                ticketLevel, fullReady, statusName));
+            if (best >= 0) {
+                sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.nearest",
+                    pcx, pcz, best));
+            }
+            // 这里刻意**不** append "chunkpilot.probe.marks"(cpRequested/cpTicketed) —— 见文件头说明
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.view",
+                server.getPlayerList().getViewDistance()));
+        } catch (Throwable t) {
+            return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.failed",
+                String.valueOf(t));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 取"可见表里的 ChunkHolder" —— **仅用于探针的票等级**, 拿不到就降级(ticketLevel=-1)。
+     * javap 实证: `ServerChunkCache.getVisibleChunkIfPresent(long)` 是 package-private ⇒ 只能反射;
+     * NeoForge 运行期是 Mojang 官方成员名, 所以**按名反射是可行的**(fabric 侧相反, 走 mixin accessor)。
+     */
+    private static Object chunkpilot$visibleHolder(ServerLevel level, long posLong) {
+        try {
+            Object source = level.getChunkSource();
+            for (Class<?> c = source.getClass(); c != null; c = c.getSuperclass()) {
+                try {
+                    java.lang.reflect.Method m = c.getDeclaredMethod("getVisibleChunkIfPresent", long.class);
+                    m.setAccessible(true);
+                    return m.invoke(source, posLong);
+                } catch (NoSuchMethodException ignored) {
+                    // 继续往父类找
+                }
+            }
+        } catch (Throwable ignored) {
+            // 反射被模块系统挡住也只是少一列票等级, 不影响 loaded/探针主体
+        }
+        return null;
+    }
+
+    /** 票等级 → 人类可读的加载类型 (与 FabricPlatform 的同名助手同口径). */
+    private static String chunkpilot$levelTypeName(int level) {
+        if (level < 0) return "unknown";
+        if (level <= 31) return "ENTITY_TICKING";
+        if (level == 32) return "BLOCK_TICKING";
+        if (level == 33) return "FULL";
+        if (level < 44) return "BORDER";
+        return "UNLOADED";
+    }
 }
