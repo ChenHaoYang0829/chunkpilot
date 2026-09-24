@@ -4,9 +4,9 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "1.21.3"
-def fabLoader = "0.19.3"
-def fabApi = "0.114.1+1.21.3"
+def fabMC = "26.2"
+def fabLoader = "0.19.5"
+def fabApi = "0.161.0+26.2"
 repositories {
     mavenCentral()
     maven { url "https://maven.fabricmc.net/" }
@@ -63,8 +63,8 @@ sourceSets {
     }
 }
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 // P1.1: 静态反射测试 task 配置
