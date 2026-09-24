@@ -35,10 +35,32 @@ public class NeoForgePlatform implements PlatformAbstraction {
     //     加票 = ServerChunkCache.addTicket(new Ticket(type, level), pos);
     //     按精确 level 移除 = ServerChunkCache.removeTicketWithRadius(type, pos,
     //       ChunkLevel.byStatus(FullChunkStatus.FULL) - level)   ← TicketStorage 字节码实证.
-    // 语义映射: 1.21.3 的自定义 chunkpilot:forced(31 tick) / chunkpilot:gen(31 tick) 不落盘、有寿命,
-    //   内置类型里只有 ENDER_PEARL(timeout 40 tick, persist=false, LOADING_AND_SIMULATION) 同性质。
-    public static final TicketType CHUNKPILOT_TICKET = TicketType.ENDER_PEARL;
-    public static final TicketType CHUNKPILOT_GEN_TICKET = TicketType.ENDER_PEARL;
+    // ========== 二阶段 B2 整改: 不再复用内置的 TicketType.ENDER_PEARL ==========
+    //
+    // 原实现把两个 CP 票都直接指向 `TicketType.ENDER_PEARL`。逐个 javap (1.21.7 的 NeoForge -server.jar)
+    // 取证后确认这有两处硬伤, 与本整改"最小偏离原版语义 + 不破坏与其它 mod 的兼容"冲突:
+    //
+    //   ① **2 秒就过期**: TicketType 静态初始化式里 `register("ender_pearl", 40L, false, LOADING_AND_SIMULATION)`
+    //      ⇒ timeout = **40 tick = 2 秒**; 而 `Ticket.<init>(TicketType,int)` 把 `ticksLeft = type.timeout()`,
+    //      `TicketStorage` 每 tick 调 `Ticket.decreaseTicksLeft()` 并按 `Ticket.isTimedOut()`
+    //      (= `type.hasTimeout() && ticksLeft < 0`) 删除过期票。
+    //      CP 的 ChunkLoadOptimizer 只在"目标集合/等级发生变化"时才补票 (anyChanged), 它**以为**票一直在,
+    //      于是 2 秒后 sector/prefetch 票静默消失、再也不补 ⇒ 实测前方已加载前沿掉到 8.7 区块、
+    //      覆盖 0.47~0.70 (而 1.21.5/1.21.6/1.21.8 同口径都是 1.0)。
+    //   ② **劫持原版票据语义**: ENDER_PEARL 是原版**真实使用**的类型 (投掷末影珍珠传送),
+    //      而 CP 的 removeTicketAtLevel 走 `removeTicketWithRadius(type, pos, radius)` —— 按 type 匹配。
+    //      共用同一实例意味着 CP 可能删掉原版末影珍珠的票 (反之亦然) ⇒ 对玩法 mod/原版行为的真实破坏面。
+    //
+    // 修法与 1.21.5/1.21.6/1.21.8 对齐 (它们都用**本模组私有**的 TicketType):
+    //   CHUNKPILOT_TICKET     : NO_TIMEOUT ⇒ `hasTimeout()==false` ⇒ `isTimedOut()` 恒 false, 不会静默消失
+    //                           (与 1.21.8 同值; 撤销仍由 CP 的对称 removeChunkTicket 负责)。
+    //   CHUNKPILOT_GEN_TICKET : 200L (10 秒) —— 与 1.21.5/1.21.6/1.21.8 完全一致, 预生成票自清理。
+    //   两者 persist=false ⇒ TicketStorage 序列化时先判 persist 直接跳过, 私有类型不进
+    //   BuiltInRegistries.TICKET_TYPE 也绝不会在停机保存时报错 (1.21.8 分支注释里同样的论证)。
+    public static final TicketType CHUNKPILOT_TICKET =
+        new TicketType(TicketType.NO_TIMEOUT, false, TicketType.TicketUse.LOADING_AND_SIMULATION);
+    public static final TicketType CHUNKPILOT_GEN_TICKET =
+        new TicketType(200L, false, TicketType.TicketUse.LOADING_AND_SIMULATION);
 
     /**
      * 预生成票使用的 level.
