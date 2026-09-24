@@ -20,12 +20,12 @@ configurations.all {
 //   (平台实现是各模块直接 implements + 入口显式构造注入); `platformSetupLoomIde()` 只影响 IDE/run-config。
 //   实测移除后 :common:test / :neoforge:build 均通过。
 dependencies {
-    modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
+    implementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
     // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
+    implementation "net.neoforged.fancymodloader:loader:11.0.5"
+    implementation "net.neoforged.fancymodloader:earlydisplay:11.0.5"
+    implementation "net.neoforged:bus:8.0.5"
 
     // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
     //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
@@ -38,7 +38,7 @@ dependencies {
     //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
 
     // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
+    implementation "net.fabricmc:sponge-mixin:0.17.0+mixin.0.8.7"
 
     // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
     // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
@@ -47,17 +47,9 @@ dependencies {
 
     // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
     minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
-    mappings loom.officialMojangMappings()
 }
 
 loom {
-    // 2026-08-01: 显式使用 Mojang official mappings
-    officialMojangMappings()
-
-    mixin {
-        defaultRefmapName = "chunkpilot.refmap.json"
-    }
-
     runs {
         server {
             server()
@@ -79,59 +71,20 @@ sourceSets {
     }
 }
 
-// NeoForge 1.21.1 runtime 使用 Mojang 命名 class,而 loom 默认输出 intermediary 命名 remapJar
-// 会导致 NoClassDefFoundError (例如 class_2561 Component)。
-// 解决方案: 禁用 remapJar + 后处理 refmap 为 Mojang 命名
-tasks.named('remapJar').configure { enabled = false }
+// 2026-09-24 (port/26.x): 这里原有 (a) `tasks.named('remapJar'){enabled=false}` 与
+//   (b) 硬编码 Mojang 命名 refmap 的 `fixRefmap` 任务 (含一个 tmpDir.deleteDir() 的产物卫生修复)。
+//   两者存在的唯一理由是**旧 loom 的 remapJar 会把 jar 重映射成 intermediary 命名**, 而 NeoForge
+//   运行期是官方名 —— 于是要"禁用 remapJar + 手写一份 Mojang 名 refmap"。
+//   26.1 起 MC **不再混淆** (Mojang 不再发布 client_mappings/server_mappings, Fabric 也不再发
+//   intermediary), 本模块已换用 `dev.architectury.loom-no-remap`: 既不重映射 MC 也不重映射 mod,
+//   jar 里的类名/成员名**就是运行期真名**, 因此 (a)(b) 双双失去意义, 一并删除。
+//   连带影响:
+//     · no-remap 插件里**不存在** `remapJar` 任务 ⇒ 交付脚本不能再 `-x remapSourcesJar`;
+//     · 产物路径从 `build/devlibs/neoforge-<v>-dev.jar` 变为 **`build/libs/neoforge-<v>.jar`**
+//       (交付时按新路径取, 已在 REPORT.md 与本文件注明);
+//     · `fixRefmap` 里的 tmpDir.deleteDir() 产物卫生修复也随之不再需要 (没有二次打包了);
+//     · 4 个 mixins.json 里的 "refmap" 声明一并移除 (没有命名空间可映射)。
 
-// 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
-tasks.register('fixRefmap') {
-    doLast {
-        def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")
-        if (!jarFile.exists()) {
-            println "Jar not found: $jarFile"
-            return
-        }
-        def tmpDir = file("$buildDir/tmp/fixrefmap")
-        // 2026-09-24 产物卫生: 必须先清空暂存目录再解包。ant.unjar 只覆盖不删除 ——
-        //   若上次构建留下的 class 在新 jar 里已经不存在 (源码被删了), 它们会被原样重新打进 jar。
-        //   实测: 1.0.0 删除客户端渲染链路后, 未清空时 neoforge-1.0.0-dev.jar 里**仍带着**
-        //   ChunkPilotClient/ClientRenderConfig/客户端 Mixin 等已删除的 class 和 chunkpilot.client.mixins.json。
-        tmpDir.deleteDir()
-        tmpDir.mkdirs()
-        ant.unjar(src: jarFile, dest: tmpDir)
-        
-        // 写新的 Mojang 命名 refmap
-        def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
-        refmapFile.text = '''{
-  "mappings": {
-    "com/chunkpilot/neoforge/mixin/ChunkMapMixin": {
-      "updatePlayerPos": "Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V",
-      "move": "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderMixin": {
-      "collectChunksToSend": "Lnet/minecraft/server/network/PlayerChunkSender;collectChunksToSend(Lnet/minecraft/server/level/ChunkMap;Lnet/minecraft/world/level/ChunkPos;)Ljava/util/List;"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderSendMixin": {
-      "sendNextChunks": "Lnet/minecraft/server/network/PlayerChunkSender;sendNextChunks(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
-      "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
-    }
-  }
-}
-'''
-        // 重打包
-        ant.delete(file: jarFile)
-        ant.zip(destfile: jarFile, basedir: tmpDir)
-        println "Fixed refmap in $jarFile"
-    }
-}
-
-// 让 jar 任务依赖 fixRefmap, 确保 build 后 refmap 是 Mojang 命名
-afterEvaluate {
-    tasks.named('jar').configure { finalizedBy('fixRefmap') }
-}
 // 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
 //   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
 //   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的 1.21.x 上也"允许加载",

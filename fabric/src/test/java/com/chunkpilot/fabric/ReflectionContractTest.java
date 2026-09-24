@@ -153,7 +153,13 @@ class ReflectionContractTest {
             // 简单健全性检查: 包含 package 字段 + 包含 mixin 列表字段
             assertTrue(content.contains("\"package\""), "mixins.json 缺 package 字段");
             assertTrue(content.contains("\"mixins\""), "mixins.json 缺 mixins 字段");
-            assertTrue(content.contains("\"refmap\""), "mixins.json 缺 refmap 字段 (loom 会找不到)");
+            // 26.1 (port/26.1) 起 MC **不再混淆**: Mojang 不再发布 client_mappings/server_mappings,
+            //   Fabric 也不再发布 intermediary (meta.fabricmc.net 对 26.1 返回 intermediary=0.0.0)。
+            //   ⇒ mixin 目标名**就是运行期真名**, refmap 机制整体不需要, 声明它反而会引用一个
+            //     永不存在的 chunkpilot.refmap.json。故本条断言**反转**: refmap 必须不存在。
+            //   (verify_artifacts.py 的判据也是"mixin 配置自己声明了 refmap 才要求文件存在"。)
+            assertFalse(content.contains("\"refmap\""),
+                "26.1 无混淆 ⇒ mixins.json 不应再声明 refmap (没有命名空间可映射)");
         } catch (Exception e) {
             fail("读 chunkpilot.mixins.json 失败: " + e.getMessage());
         }

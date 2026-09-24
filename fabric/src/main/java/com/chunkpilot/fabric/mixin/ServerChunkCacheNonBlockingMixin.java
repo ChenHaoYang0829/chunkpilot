@@ -88,7 +88,7 @@ public abstract class ServerChunkCacheNonBlockingMixin {
             // 只有主线程会被 managedBlock 卡住; worker 线程不能动 (worldgen 正在用)
             if (Thread.currentThread() != acc.chunkpilot$mainThread()) return;
 
-            ChunkHolder holder = acc.chunkpilot$getVisibleChunkIfPresent(ChunkPos.asLong(chunkX, chunkZ));
+            ChunkHolder holder = acc.chunkpilot$getVisibleChunkIfPresent(ChunkPos.pack(chunkX, chunkZ));
             if (holder == null) return;                     // 原版会立刻返回 null, 不阻塞
             if (holder.getTicketLevel() > FULL_CHUNK_LEVEL) return; // 不在加载范围, 原版返回 null
 

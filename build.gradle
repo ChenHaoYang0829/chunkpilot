@@ -5,21 +5,21 @@ buildscript {
 }
 
 plugins {
-    id 'dev.architectury.loom' version '1.13.469' apply false
+    id 'dev.architectury.loom-no-remap' version '1.17.493' apply false
     id 'architectury-plugin' version '3.5.169' apply false
 }
 
 ext {
     // 版本常量
-    minecraftVersion = "1.21.1"
+    minecraftVersion = "26.1"
     
     // Fabric
-    fabricLoaderVersion = "0.16.9"
-    fabricApiVersion = "0.116.13+1.21.1"
-    yarnMappings = "1.21.1+build.3"
+    fabricLoaderVersion = "0.19.5"
+    fabricApiVersion = "0.155.3+26.1.2"
+    yarnMappings = "26.1+build.1"
     
     // NeoForge
-    neoforgeVersion = "21.1.77"
+    neoforgeVersion = "26.1.0.19-beta"
     
     // Architectury
     architecturyVersion = "13.0.8"
@@ -36,7 +36,7 @@ subprojects {
     apply plugin: 'java'
     // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
     if (project.name != 'fabric') {
-        apply plugin: 'dev.architectury.loom'
+        apply plugin: 'dev.architectury.loom-no-remap'
         // 2026-09-24: 不再应用 'architectury-plugin' —— 它只服务 @ExpectPlatform 代码生成与本项目零使用的
         //   platformPackage 设置; 实测 :common:test / :neoforge:build 在移除后仍通过。
         //   (dev.architectury.loom 仍保留: 它是 common/neoforge 实际使用的 loom 实现。)
@@ -44,14 +44,11 @@ subprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(21)
+            languageVersion = JavaLanguageVersion.of(25)
         }
     }
 
     if (project.name != 'fabric') {
-        loom {
-            silentMojangMappingsLicense()
-        }
     }
 
     // 2026-08-01: minecraft dependency 由各子项目自己设 (fabric 1.21.2, neoforge 1.21.1 不同)

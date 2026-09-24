@@ -21,8 +21,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // ★ 1.21.11 API 变更 (port/1.21.11, javap 实证): `Connection.send` 第二个参数从
+    //   `net.minecraft.network.PacketSendListener` 换成了 `io.netty.channel.ChannelFutureListener`:
+    //       1.21.3 : send(Packet, PacketSendListener, Z)V
+    //       1.21.11: send(Packet, ChannelFutureListener, Z)V
+    //   (`PacketSendListener` 类**还在**, 只是不再作参数; 它的 `thenRun(Runnable)` 现在返回
+    //    ChannelFutureListener。)
+    //   ⚠ 这里用的是**硬编码 descriptor**, 不经过 refmap ⇒ 编译期零提示, 旧 descriptor 会在
+    //     **启动时**报 `InvalidInjectionException: could not find any targets` → `MixinApplyError`
+    //     → `ModLoadingException` → 服务端起不来。本版本第一轮 neoforge 启动就是这样崩的
+    //     (日志: `Couldn't find Minecraft server thread`)。已改为新 descriptor。
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();

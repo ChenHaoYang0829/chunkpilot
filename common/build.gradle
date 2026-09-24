@@ -4,12 +4,11 @@ plugins {
 
 dependencies {
     // 依赖 fabric loader 仅用于 @Environment 注解
-    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
+    implementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
 
     // 2026-08-01: common 源码不含 MC 直接类型引用 (用 PlatformAbstraction 抽象层)
     // 但 loom 编译需要 MC, 这里给 fabric 的 1.21.2
-    minecraft "com.mojang:minecraft:1.21.2"
-    mappings loom.officialMojangMappings()
+    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
 
     // P0: 单元测试 — common 模块零 MC 引用, 测试也只用 JUnit + chunkpilot.* 类
     testImplementation platform('org.junit:junit-bom:5.10.2')

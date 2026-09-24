@@ -64,8 +64,8 @@ public abstract class ChunkDataSenderMixin {
             if (pendingList.isEmpty()) return;
 
             // 玩家 chunk 坐标
-            int playerChunkX = playerChunkPos.x;
-            int playerChunkZ = playerChunkPos.z;
+            int playerChunkX = playerChunkPos.x();
+            int playerChunkZ = playerChunkPos.z();
 
             // 用 ChunkSendScheduler 排序 (投影公式)
             SpeedTracker speedTracker = cp.getOptimizer().getSpeedTracker();
@@ -103,7 +103,7 @@ public abstract class ChunkDataSenderMixin {
                     sb.append(" v=").append(String.format("%.2f", speedTracker.getSpeed(player.getUUID())));
                     sb.append(" sent=");
                     for (int i = 0; i < result.size(); i++) {
-                        long cl = result.get(i).getPos().toLong();
+                        long cl = result.get(i).getPos().pack();
                         int cx = net.minecraft.world.level.ChunkPos.getX(cl);
                         int cz = net.minecraft.world.level.ChunkPos.getZ(cl);
                         if (i > 0) sb.append(",");
