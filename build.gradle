@@ -28,7 +28,7 @@ ext {
     architecturyVersion = "14.0.4"
 
     // Mod
-    modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
+    modVersion = "1.0.0"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
     modGroup = "com.chunkpilot"
     modId = "chunkpilot"
 }
