@@ -33,4 +33,9 @@ rootProject.name = 'chunkpilot'
 
 include 'common'
 include 'fabric'
-include 'neoforge'
+// 1.20.1 不交付 neoforge: 该版本线的"Forge 后继"就是 Forge 47 本身, 其产物由
+// **独立分支 forge/1.20.1** 的 forge/ 子项目产出(见 artifacts/1.20.1/chunkpilot-forge-1.20.1.jar)。
+// 本 worktree 里的 neoforge 模块仍指向 1.21.x, 在这里 include 会让 Gradle **配置阶段**就失败
+// (即便不请求它的任务), 因此显式排除。历史上有人试图把它改造成 Forge —— 那条路线已被用户否决
+// (#4: 不做 1.20.1 备选 Forge 路线), 其成果隔离在 artifacts/1.20.1/_alt-neoforge-module-conversion/。
+// include 'neoforge'
