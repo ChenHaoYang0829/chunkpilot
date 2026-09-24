@@ -41,6 +41,8 @@ ext {
     architecturyVersion = "19.0.1"
 
     // Mod —— 用户硬性要求: 所有产物版本号统一 1.0.0
+    //   1.0.0: 版本号统一 —— 本处 (jar 名) 与 fabric.mod.json / neoforge.mods.toml /
+    //   ChunkPilot.VERSION 四处必须一致, 且都不带 -alpha 后缀 (merge main 时保留的说明)。
     modVersion = "1.0.0"
     modGroup = "com.chunkpilot"
     modId = "chunkpilot"

@@ -4,9 +4,7 @@ import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.config.ChunkPilotConfig;
 import com.chunkpilot.core.ChunkPilotCommand;
 import com.chunkpilot.generation.GenerationScheduler;
-import com.chunkpilot.neoforge.network.NeoForgeNetworkSender;
 import com.chunkpilot.neoforge.platform.NeoForgePlatform;
-import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -48,20 +46,14 @@ public class ChunkPilotNeoForge {
         PlatformAbstraction platform = new NeoForgePlatform();
         new ChunkPilot(platform);
 
-        // v0.4.0: 网络注册
-        NeoForgeNetworkSender networkSender = new NeoForgeNetworkSender();
-        modEventBus.addListener(networkSender::register);
-        ChunkPilot.getInstance().initNetwork(networkSender);
-        networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
-            @Override
-            public void onClientCapability(UUID playerId, boolean clientHasCP, int protocolVersion) {
-                ChunkPilot.getInstance().getNetworkDispatcher().onClientCapability(playerId, clientHasCP, protocolVersion);
-            }
-            @Override
-            public void onClientConfigOverride(UUID playerId, com.chunkpilot.network.ClientConfigOverridePacket packet) {
-                ChunkPilot.getInstance().getNetworkDispatcher().onClientConfigOverride(playerId, packet);
-            }
-        });
+        // 客户端物理侧: 只留一条启动日志 (1.0.0 起客户端无渲染侧功能)
+        // 2026-09-25 merge main 修: 26.3 的 FancyModLoader **12.0.0** 把 FMLEnvironment 改成
+        //   私有构造 + 访问器 (javap 实证: 只剩 `public static Dist getDist()` /
+        //   `public static boolean isProduction()`), 原来的 public static final 字段
+        //   `dist` / `production` 都已删除 ⇒ `.dist` 编译不过。
+        if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
+            com.chunkpilot.neoforge.client.ChunkPilotNeoForgeClient.init();
+        }
 
         NeoForge.EVENT_BUS.register(this);
 
@@ -168,34 +160,16 @@ public class ChunkPilotNeoForge {
             }
         } catch (Throwable ignored) {}
 
-        // v0.4.0: 网络调度器 tick (发送优先级提示)
-        try {
-            var dispatcher = cp.getNetworkDispatcher();
-            if (dispatcher != null) {
-                var tracker = cp.getOptimizer().getSpeedTracker();
-                var playerPositions = new java.util.HashMap<java.util.UUID, int[]>();
-                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-                if (server != null) {
-                    for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
-                        playerPositions.put(sp.getUUID(), new int[]{sp.blockPosition().getX() >> 4, sp.blockPosition().getZ() >> 4});
-                    }
-                    dispatcher.onServerTick(tracker, playerPositions);
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.warn("[ChunkPilot] NetworkDispatcher tick failed: {}", t.toString());
-        }
+        // (port/26.3 merge main) main 的 1.0.0 死代码清理删除了整套客户端网络链路
+        //   (CapabilityPacket/ClientNetworkHandler/ServerNetworkDispatcher/…NetworkSender 与
+        //    ChunkPilot#getNetworkDispatcher/getInitNetwork) ⇒ 这里的"网络调度器 tick"一并删除。
+        //   上面那段"玩家脚下 r=2 安全网"是本版本的功能, 保留 (ChunkMapGenerationMixin 依赖它)。
     }
 
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
             NeoForgePlatform.registerPlayer(sp);
-            // v0.4.0: 发送 Capability 给客户端
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerConnect(sp.getUUID());
-            }
             LOGGER.info("[ChunkPilot] Player logged in: {} (uuid={}, cache size={})",
                 sp.getName().getString(), sp.getUUID(), NeoForgePlatform.getCacheSize());
         }
@@ -210,11 +184,6 @@ public class ChunkPilotNeoForge {
                 if (optimizer.getIntegrationManager() != null) {
                     optimizer.getIntegrationManager().onPlayerRemoved(sp.getUUID());
                 }
-            }
-            // v0.4.0: 清理网络状态
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerDisconnect(sp.getUUID());
             }
             NeoForgePlatform.unregisterPlayer(sp);
         }

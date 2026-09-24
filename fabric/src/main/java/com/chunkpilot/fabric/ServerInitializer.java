@@ -2,9 +2,7 @@ package com.chunkpilot.fabric;
 
 import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.core.ChunkPilotCommand;
-import com.chunkpilot.fabric.network.FabricNetworkSender;
 import com.chunkpilot.fabric.platform.FabricPlatform;
-import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -40,19 +38,7 @@ public class ServerInitializer {
         // 绑定/解绑 MinecraftServer 到 FabricPlatform
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             FabricPlatform.setServer(server);
-            FabricNetworkSender networkSender = new FabricNetworkSender();
-            ChunkPilot.getInstance().initNetwork(networkSender);
-            networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
-                @Override
-                public void onClientCapability(java.util.UUID playerId, boolean clientHasCP, int protocolVersion) {
-                    ChunkPilot.getInstance().getNetworkDispatcher().onClientCapability(playerId, clientHasCP, protocolVersion);
-                }
-                @Override
-                public void onClientConfigOverride(java.util.UUID playerId, com.chunkpilot.network.ClientConfigOverridePacket packet) {
-                    ChunkPilot.getInstance().getNetworkDispatcher().onClientConfigOverride(playerId, packet);
-                }
-            });
-            ChunkPilotFabric.LOGGER.info("ChunkPilot: server bound, network initialized");
+            ChunkPilotFabric.LOGGER.info("ChunkPilot: server bound");
             // 启动冻结检测器 (诊断: 主线程卡住时 dump 玩家周边 chunk 状态)
             try { com.chunkpilot.fabric.platform.FabricPlatform.startFreezeDetector(); }
             catch (Throwable ignored) {}
@@ -157,25 +143,11 @@ public class ServerInitializer {
                     }
                 }
             } catch (Throwable ignored) {}
-
-            // v0.4.0: 网络调度器 tick (发送优先级提示)
-            if (cp.getNetworkDispatcher() != null) {
-                var tracker = cp.getOptimizer().getSpeedTracker();
-                var playerPositions = new java.util.HashMap<java.util.UUID, int[]>();
-                for (var sp : server.getPlayerList().getPlayers()) {
-                    playerPositions.put(sp.getUUID(), new int[]{sp.blockPosition().getX() >> 4, sp.blockPosition().getZ() >> 4});
-                }
-                cp.getNetworkDispatcher().onServerTick(tracker, playerPositions);
-            }
         });
 
         // 玩家进出事件
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             FabricPlatform.registerPlayer(handler.player);
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerConnect(handler.player.getUUID());
-            }
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             var optimizer = ChunkPilot.getInstance().getOptimizer();
@@ -184,10 +156,6 @@ public class ServerInitializer {
                 if (optimizer.getIntegrationManager() != null) {
                     optimizer.getIntegrationManager().onPlayerRemoved(handler.player.getUUID());
                 }
-            }
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerDisconnect(handler.player.getUUID());
             }
             FabricPlatform.unregisterPlayer(handler.player);
         });

@@ -71,6 +71,7 @@ sourceSets {
 //   运行期是官方名"。26.x MC 不再混淆且本模块已用 `dev.architectury.loom-no-remap`,
 //   **没有 remapJar 任务** —— 产物直接在 build/libs/ 下, 类名就是运行期真名, refmap 一并删除。
 
+
 // 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
 //   26.3 → [26.3,26.4)
 def _mc = project.property('minecraftVersion').toString()
