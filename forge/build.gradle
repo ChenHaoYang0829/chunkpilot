@@ -1,0 +1,139 @@
+// ============================================================================
+//  ChunkPilot —— MC 1.20.1 / Forge 47.1.106 子项目  (分支 forge/1.20.1)
+// ============================================================================
+//  为什么走 architectury-loom 的 **forge 平台** (而不是 ForgeGradle 6 / NeoGradle):
+//   1. 本仓库其它模块 (common / neoforge) 已经用 dev.architectury.loom 1.13.469,
+//      工具链与缓存都在位, 不需要新引入一套构建插件;
+//   2. architectury-loom 的 forge 平台支持 `officialMojangMappings()`, 开发期用
+//      **Mojang 官方成员名** (本项目全部源码都是 Mojang 名), 打包时由 remapJar
+//      重映射到 1.20.1 生产环境的 **SRG 成员名** ——
+//      这一点是决定性的: 1.20.1 Forge 的生产运行期是
+//      "Mojmap 类名 + SRG 成员名" (`javap -c` 里是
+//      `Method net/minecraft/server/MinecraftServer.m_129843_`),
+//      main 那套 "禁用 remapJar + 手写 refmap" 在 1.20.1 上不可能 work;
+//   3. 1.20.1 的 Forge 里**没有** NeoForge 1.21 的 `RegisterPayloadHandlersEvent` /
+//      `CustomPacketPayload`, 但那些是 Java 源码层面的差异, 与构建路线无关.
+// ============================================================================
+
+// architectury-loom 用 `project.findProperty("loom.platform")` 决定平台, 而且是在
+//   **apply 阶段**就 eager 判定并据此注册 `forge` 配置 —— 所以真正生效的那一处设置在
+//   根 build.gradle 的 subprojects{} 里 (apply 之前), 见那里的注释。
+//   这里再设一次只是让本文件单独可读 / 防止有人从别处 apply; 不依赖它。
+ext."loom.platform" = "forge"
+
+repositories {
+    // Forge 47.1.106 的发布坐标在 NeoForged 的 Maven 上 (net.neoforged:forge)
+    maven { url = "https://maven.neoforged.net/releases/" }
+    maven { url = "https://maven.minecraftforge.net/" }
+    mavenCentral()
+}
+
+// 注意: **不要**照抄 neoforge 模块的两条 cpw.mods 版本 pin。
+//   那两条把 modlauncher 顶到 11.0.4、securejarhandler 顶到 3.0.8, 而这两个版本
+//   是 NeoForge 21.x 时代编的 **Java 21 字节码** (major 65) —— 在 `options.release = 17`
+//   的编译类路径上会被 Gradle 的 org.gradle.jvm.version 属性匹配直接拒掉:
+//     "… is only compatible with JVM runtime version 21 or newer"
+//   1.20.1 的 Forge 47.1.106 自己在 userdev config.json 里声明的就是
+//     cpw.mods:securejarhandler:2.1.10 (major 60 = Java 16) + cpw.mods:modlauncher:10.0.9,
+//   按它原生声明解析即可, 既正确又能编到 Java 17 字节码。
+
+dependencies {
+    // 1.20.1 必须用 Mojang official mappings (与工程其它模块一致)
+    minecraft "com.mojang:minecraft:1.20.1"
+    mappings loom.officialMojangMappings()
+
+    // NeoForge 在 1.20.1 的发布产物就是 Forge 本体, 命名空间是 net.minecraftforge.*
+    forge "net.neoforged:forge:1.20.1-47.1.106"
+
+    // 单元测试 (common 的纯逻辑测试也在本模块的源码集里)
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-runner'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+loom {
+    officialMojangMappings()
+
+    forge {
+        // Forge 需要显式知道有哪些 mixin 配置 (写进 MANIFEST 的 MixinConfigs),
+        // 否则 Forge 的 Mixin 引导器根本不会去加载它。
+        mixinConfig "chunkpilot.mixins.json"
+    }
+
+    // 注意: **不写** `mixin { defaultRefmapName = ... }`。
+    //   loom 1.13.469 已经默认关掉 mixin 注解处理器 (构建日志会提醒 "The mixin annotation is
+    //   no longer enabled by default, you should remove any loom.mixin configuration"), 而
+    //   architectury-loom 的 forge 平台改为在 remapJar 阶段**直接重写 mixin 注解里的成员名**
+    //   成 SRG (javap 实证: ChunkMapMixin 的 @Inject method 变成
+    //   "m_140373_(Lnet/minecraft/server/level/ServerPlayer;)Lnet/minecraft/core/SectionPos;",
+    //   mixin 体内的 getX()/getZ()/getUUID() 也变成 m_20185_/m_20189_/m_20148_)。
+    //   这条路径下运行期不需要 refmap, 声明它反而多一条 "Unable to read refmap" 警告。
+
+    runs {
+        server {
+            server()
+        }
+        client {
+            client()
+        }
+    }
+}
+
+sourceSets {
+    main {
+        // common 模块的源码直接并进来一起编译 (同 neoforge 模块的做法).
+        // 这里故意用**路径**而不是 project(':common').sourceSets —— 后者会强制
+        // 配置 :common (它用 fabric 平台 + 1.21.2), 徒增构建时间与不确定性.
+        java.srcDir "$rootDir/common/src/main/java"
+        resources.srcDir "$rootDir/common/src/main/resources"
+    }
+    test {
+        java.srcDir "$rootDir/common/src/test/java"
+        resources.srcDir "$rootDir/common/src/test/resources"
+    }
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+    }
+}
+
+// 元数据里的 MC 版本区间**构建期计算**, 不手写:
+//   写宽了 (如 [1.20.1,1.22)) 会让 jar 被装到别的版本上"允许加载", 然后以
+//   mixin 目标缺失的形式崩在启动期 —— 比明确拒绝更难排查.
+def mcRange = "[1.20.1,1.20.2)"
+
+processResources {
+    inputs.property "mcRange", mcRange
+    filesMatching("META-INF/mods.toml") {
+        expand(mcRange: mcRange, modVersion: project.version)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // ★ 必须编到 **Java 17** 字节码 (major 61), 不能是 toolchain 默认的 21 (major 65)。
+    //   Forge 47.1.x 自带的 Mixin (0.8.x) 的 compatibilityLevel 上限就是 JAVA_17:
+    //   编译到 21 会让 Mixin 读类时抛 MixinPreProcessorException。
+    //   MC 1.20.1 本身也是 Java 17 目标, release=17 与生产运行期一致。
+    options.release = 17
+}
+
+jar {
+    manifest {
+        attributes(
+            'Specification-Title'     : 'chunkpilot',
+            'Specification-Vendor'    : 'ChunkPilot Team',
+            'Specification-Version'   : '1',
+            'Implementation-Title'    : project.name,
+            'Implementation-Version'  : project.version,
+            'Implementation-Vendor'   : 'ChunkPilot Team',
+            // Forge 从 manifest 读 mixin 配置 (1.20.1 的 Forge 仍用这个键)
+            'MixinConfigs'            : 'chunkpilot.mixins.json'
+        )
+    }
+}

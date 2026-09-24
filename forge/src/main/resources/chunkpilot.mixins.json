@@ -1,0 +1,22 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.chunkpilot.forge.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "ChunkMapMixin",
+    "ServerPlayerMixin",
+    "ConnectionNetTrackerMixin",
+    "LevelNonBlockingReadMixin",
+    "ServerChunkCacheAccessor",
+    "ServerGamePacketListenerMoveMixin",
+    "ServerChunkCacheNonBlockingMixin"
+  ],
+  "client": [
+    "client.ChunkRenderDispatcherMixin",
+    "client.SodiumRenderSectionManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

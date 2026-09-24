@@ -32,3 +32,9 @@ rootProject.name = 'chunkpilot'
 include 'common'
 include 'fabric'
 include 'neoforge'
+// 2026-09-25: MC 1.20.1 的 Forge 产物专用模块 (分支 forge/1.20.1).
+//   它与上面的 'neoforge' 模块是**两套东西**: 1.20.1 的 Forge 47.x 与 1.21.x 的
+//   NeoForge 21.x 在构建插件 (architectury-loom 的 forge 平台 vs neoforge 平台)、
+//   包命名空间 (net.minecraftforge.* vs net.neoforged.*)、网络 API 上完全不同,
+//   所以必须是独立子项目, **不能**把 neoforge 掰弯成 Forge.
+include 'forge'

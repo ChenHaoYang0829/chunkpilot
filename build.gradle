@@ -34,6 +34,15 @@ subprojects {
     apply plugin: 'java'
     // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
     if (project.name != 'fabric') {
+        // 2026-09-25 (分支 forge/1.20.1): architectury-loom 在 **apply 阶段**就按
+        //   `project.findProperty("loom.platform")` 决定平台, 并据此立刻注册 `forge` /
+        //   `neoForge` 依赖配置 (见 LoomConfigurations: `extension.isForge()` 是 eager 判定)。
+        //   所以平台必须在 apply 之前设好 —— 放在 forge/build.gradle 里已经太晚
+        //   (那会得到 "Could not find method forge()")。这里只对 :forge 生效,
+        //   :common / :neoforge 的平台选择完全不变。
+        if (project.name == 'forge') {
+            project.ext."loom.platform" = "forge"
+        }
         apply plugin: 'dev.architectury.loom'
         // 2026-09-24: 不再应用 'architectury-plugin' —— 它只服务 @ExpectPlatform 代码生成与本项目零使用的
         //   platformPackage 设置; 实测 :common:test / :neoforge:build 在移除后仍通过。

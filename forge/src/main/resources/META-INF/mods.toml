@@ -1,0 +1,37 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+issueTrackerURL = ""
+
+[[mods]]
+modId = "chunkpilot"
+version = "${modVersion}"
+displayName = "ChunkPilot"
+authors = "ChunkPilot Team"
+description = '''
+Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).
+'''
+
+# ============================================================================
+#  依赖声明: **Forge 1.20.1 的 schema 用 `mandatory = true`, 不是 NeoForge 的 `type = "required"`**
+#  实测证据 (第一次启动被拒):
+#    Locator {mods folder locator ...} found an invalid mod file
+#      InvalidModFileException: Missing required field mandatory in dependency (cp.jar)
+#  1.20.1 的 Forge 读的是 `mandatory` (boolean); NeoForge 从 1.20.5 起才把它换成 `type` 字符串。
+#  另: 版本区间**构建期从 1.20.1 精确算出** = [1.20.1,1.20.2), 不写宽区间 ——
+#  写宽了 (如 [1.20.1,1.22)) 会让 jar 被装到别的版本上"允许加载", 然后以 mixin 目标缺失的形式崩在启动期。
+# ============================================================================
+
+[[dependencies.chunkpilot]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.chunkpilot]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${mcRange}"
+ordering = "NONE"
+side = "BOTH"
