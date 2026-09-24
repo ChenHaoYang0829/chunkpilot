@@ -23,8 +23,7 @@ public abstract class ChunkMapMixin {
 
     @Inject(
         method = "updatePlayerPos",
-        at = @At("HEAD")
-    )
+        at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onUpdatePlayerPos(ServerPlayer player, CallbackInfo ci) {
         try {
             var optimizer = ChunkPilot.getInstance().getOptimizer();
@@ -40,8 +39,7 @@ public abstract class ChunkMapMixin {
 
     @Inject(
         method = "move",
-        at = @At("HEAD")
-    )
+        at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onMove(ServerPlayer player, CallbackInfo ci) {
         try {
             var optimizer = ChunkPilot.getInstance().getOptimizer();

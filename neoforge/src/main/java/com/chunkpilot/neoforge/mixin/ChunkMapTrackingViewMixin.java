@@ -46,7 +46,10 @@ public abstract class ChunkMapTrackingViewMixin {
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/server/level/ChunkTrackingView;of(Lnet/minecraft/world/level/ChunkPos;I)Lnet/minecraft/server/level/ChunkTrackingView;"
-        )
+        ),
+        // 用户第 1 项兼容性硬要求: 目标缺失只"不生效", 绝不启动崩
+        require = 0,
+        expect = 0
     )
     private ChunkTrackingView chunkpilot$shiftedTrackingView(ChunkPos chunkPos, int viewDistance,
                                                              ServerPlayer player) {

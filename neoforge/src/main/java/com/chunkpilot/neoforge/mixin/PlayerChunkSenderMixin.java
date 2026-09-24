@@ -54,8 +54,7 @@ public abstract class PlayerChunkSenderMixin {
     @Inject(
         method = "collectChunksToSend",
         at = @At("HEAD"),
-        cancellable = true
-    )
+        cancellable = true, require = 0, expect = 0)
     private void chunkpilot$onCollectChunksToSend(ChunkMap chunkMap, ChunkPos playerChunkPos,
                                                    CallbackInfoReturnable<List<LevelChunk>> cir) {
         try {

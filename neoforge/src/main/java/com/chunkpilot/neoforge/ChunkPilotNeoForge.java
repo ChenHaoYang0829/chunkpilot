@@ -85,6 +85,15 @@ public class ChunkPilotNeoForge {
         // v0.2.0 优化器 tick (扇形/ticket/集成)
         cp.getOptimizer().onServerTick();
 
+        // port/26.2: 清空"本 tick CP 请求集合" —— 与 fabric 侧 ServerInitializer 同一时机
+        //   (每 tick 开头清, 之后由 GenerationScheduler → requestChunkAsync 重新填充)。
+        //   ChunkMapGenerationMixin 用它判断"这个生成任务要不要提优先级"。纯记账, 无原版影响。
+        try {
+            NeoForgePlatform.clearRequestedChunks();
+        } catch (Throwable t) {
+            // 安全: 不影响主 tick
+        }
+
         // 主动遍历在线玩家位置 — 每 tick 更新 speedTracker
         // 这不依赖 Mixin, RCON tp 也能被检测到
         try {

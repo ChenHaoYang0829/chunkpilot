@@ -22,16 +22,14 @@ public abstract class PlayerChunkSenderSendMixin {
 
     @Inject(
         method = "sendNextChunks",
-        at = @At("HEAD")
-    )
+        at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$beforeSendNextChunks(ServerPlayer player, CallbackInfo ci) {
         PlayerChunkSendHolder.currentPlayer.set(player);
     }
 
     @Inject(
         method = "sendNextChunks",
-        at = @At("RETURN")
-    )
+        at = @At("RETURN"), require = 0, expect = 0)
     private void chunkpilot$afterSendNextChunks(ServerPlayer player, CallbackInfo ci) {
         PlayerChunkSendHolder.currentPlayer.remove();
     }

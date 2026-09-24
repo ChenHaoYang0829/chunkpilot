@@ -130,6 +130,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
         // 26.2: 等级装在 Ticket 里 (DistanceManager.addTicket 已删除)。
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         world.getChunkSource().addTicket(new Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
+        // 标记该 chunk 有活跃 CP ticket (ChunkMapGenerationMixin 放行其生成, 与 fabric 同语义)
+        markChunkTicketed(pos.pack());
         return true;
     }
 
@@ -147,6 +149,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
         int radius = net.minecraft.server.level.ChunkLevel.byStatus(net.minecraft.server.level.FullChunkStatus.FULL)
                    - ticketLevel;
         world.getChunkSource().removeTicketWithRadius(CHUNKPILOT_TICKET, pos, radius);
+        // 与 addChunkTicket 对称: 取消该 chunk 的 CP ticket 标记
+        unmarkChunkTicketed(pos.pack());
         return true;
     }
 
@@ -192,6 +196,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             //   在字节码层面逐位相同 ⇒ 刻意保持取值不变)
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
             level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+            markChunkRequested(pos.pack());
             return true;
         } catch (Throwable t) {
             return false;
@@ -451,6 +456,55 @@ public class NeoForgePlatform implements PlatformAbstraction {
     public void logCommand(String executor, String message) {
         org.slf4j.LoggerFactory.getLogger("ChunkPilot").info(
             "[CMD] {} executed: {}", executor, message);
+    }
+
+    // ========== port/26.2: CP 请求/持票 chunk 记账 (供 ChunkMapGenerationMixin 判据用) ==========
+    //
+    // 为什么需要 (与 1.21.5 的 neoforge 侧同一处整改): fabric 的 `ChunkMapGenerationMixin` 用
+    //   `FabricPlatform.isChunkRequestedByCp / isChunkTicketedByCp` 判断"这个生成任务是不是 CP 自己发起的";
+    //   neoforge 平台此前**没有**这两个集合 ⇒ `generation.exclusiveGenerationNoC2me` 在 neoforge 上只能空转
+    //   (PORTING_REPORT §7.5.1a 点名的缺口)。
+    //
+    // 安全性: 本记账**只由 CP 自己的 requestChunkAsync / addChunkTicket / removeChunkTicket 写入**,
+    //   不触碰任何原版字段/方法/返回值, 也不改变票的语义; 关掉 `[generation] enabled` 之后
+    //   `ChunkMapGenerationMixin` 根本不会读它。语义与 fabric 侧逐条一致:
+    //   requested = 本 tick 的请求集合 (每 tick 开头由入口清空); ticketed = 跨 tick 的活跃 CP 票集合。
+    private static final java.util.Set<Long> requestedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<Long> ticketedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 标记某 chunk 为 CP 想生成的 (由 requestChunkAsync 调用). */
+    public static void markChunkRequested(long chunkPosLong) { requestedChunks.add(chunkPosLong); }
+
+    /** 清空本 tick 的 CP 请求集合 (每 tick 开头由 ChunkPilotNeoForge 调用). */
+    public static void clearRequestedChunks() { requestedChunks.clear(); }
+
+    /** 查询某 chunk 是否被 CP 请求生成 (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkRequestedByCp(long chunkPosLong) { return requestedChunks.contains(chunkPosLong); }
+
+    /** 标记某 chunk 有活跃 CP ticket (由 addChunkTicket 调用). */
+    public static void markChunkTicketed(long chunkPosLong) { ticketedChunks.add(chunkPosLong); }
+
+    /** 取消某 chunk 的 CP ticket 标记 (由 removeChunkTicket 调用). */
+    public static void unmarkChunkTicketed(long chunkPosLong) { ticketedChunks.remove(chunkPosLong); }
+
+    /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkTicketedByCp(long chunkPosLong) { return ticketedChunks.contains(chunkPosLong); }
+
+    /** 与 fabric 同法: 用真实活跃票集合重建标记 (旧实现只增不减会留下永久残留). */
+    @Override
+    public void rebuildCpTicketMarks(java.util.Collection<Long> activeChunkPositions) {
+        ticketedChunks.clear();
+        if (activeChunkPositions != null && !activeChunkPositions.isEmpty()) {
+            ticketedChunks.addAll(activeChunkPositions);
+        }
+    }
+
+    /** /chunkpilot status 用: 被替换掉的 park 次数 (与 fabric 同名指标). */
+    @Override
+    public long getParkSubstitutions() {
+        return com.chunkpilot.neoforge.util.NonBlockingStats.parkSubstitutions();
     }
 
     // ==================================================================================

@@ -20,8 +20,7 @@ public abstract class ServerPlayerMixin {
 
     @Inject(
         method = "teleportTo(DDD)V",
-        at = @At("HEAD")
-    )
+        at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onTeleportTo(double x, double y, double z, CallbackInfo ci) {
         try {
             var optimizer = ChunkPilot.getInstance().getOptimizer();

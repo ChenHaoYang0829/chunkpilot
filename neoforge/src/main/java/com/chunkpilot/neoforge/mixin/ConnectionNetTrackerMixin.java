@@ -27,7 +27,7 @@ public class ConnectionNetTrackerMixin {
     // ⚠ 这里用的是**硬编码 descriptor**, 不经过 refmap ⇒ 一旦签名变了就是"编译通过、启动崩":
     //   旧 descriptor 命中不到目标 ⇒ InvalidInjectionException(Critical injection failure)
     //   ⇒ MixinApplyError ⇒ 服务端起不来 (1.21.11 报告 §2.2 ★ 记录过同一个坑)。
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
@@ -43,7 +43,7 @@ public class ConnectionNetTrackerMixin {
         }
     }
 
-    @Inject(method = "channelRead0", at = @At("HEAD"))
+    @Inject(method = "channelRead0", at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onChannelRead(ChannelHandlerContext ctx, Packet<?> packet, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
