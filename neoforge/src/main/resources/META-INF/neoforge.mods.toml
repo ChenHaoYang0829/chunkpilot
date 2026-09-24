@@ -7,7 +7,7 @@ issueTrackerURL = ""
 modId = "chunkpilot"
 # port/1.21.3: 原来是 0.5.0-alpha (陈旧), 与 rootProject.modVersion / fabric.mod.json 的
 #   0.10.10-alpha 不一致 —— 统一成同一个版本号
-version = "0.10.10-alpha"
+version = "1.0.0"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''

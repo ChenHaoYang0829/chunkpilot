@@ -30,6 +30,56 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
+    // ==================================================================================
+    // v0.11.10 (专项代理 B1): CP 请求/持票集合 —— fabric 由 FabricPlatform 提供同名集合,
+    //   neoforge 之前**没有** ⇒ `[generation] exclusiveGenerationNoC2me` 这个开关在 neoforge 上
+    //   一直空转 (ChunkMapGenerationMixin 的 shouldPrioritize 恒 false).
+    //   这里按 fabric **同口径**补齐 (同名方法/同语义), 供 neoforge 的 ChunkMapGenerationMixin 查询:
+    //     * requestedChunks: 本 tick CP 想生成的 chunk 位置集合 (ChunkPos.toLong()),
+    //       由 requestChunkAsync 填充, 每 tick 开头由 ChunkPilotNeoForge.onServerTick 清空重建;
+    //     * ticketedChunks:  当前有活跃 CP ticket 的 chunk (跨 tick 持久, 每 5s 用真实活跃票集合重建).
+    //   只影响生成**调度顺序**, 不改变任何区块的加载/生成语义.
+    // ==================================================================================
+    private static final java.util.Set<Long> requestedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<Long> ticketedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 与 fabric `FabricPlatform.PREFETCH_TICKET_LEVEL` 同值: 预生成票的等级 (= FULL, 不参与 block/entity tick). */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
+    /** 标记某 chunk 为 CP 想生成的 (由 requestChunkAsync 调用). */
+    public static void markChunkRequested(long chunkPosLong) {
+        requestedChunks.add(chunkPosLong);
+    }
+
+    /** 查询某 chunk 是否被 CP 请求生成 (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkRequestedByCp(long chunkPosLong) {
+        return requestedChunks.contains(chunkPosLong);
+    }
+
+    /** 清空本 tick 的 CP 请求集合 (每 tick 开头由 ChunkPilotNeoForge.onServerTick 调用). */
+    public static void clearRequestedChunks() {
+        requestedChunks.clear();
+    }
+
+    /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkTicketedByCp(long chunkPosLong) {
+        return ticketedChunks.contains(chunkPosLong);
+    }
+
+    /**
+     * v0.11.4 同源修复: 用真实活跃票集合重建标记集合 (旧实现只增不减 ⇒ 残留永久泄漏).
+     * 由 ChunkLoadOptimizer 每 5s 调用一次 (与 fabric 的 rebuildCpTicketMarks 同口径).
+     */
+    @Override
+    public void rebuildCpTicketMarks(java.util.Collection<Long> activeChunkPositions) {
+        ticketedChunks.clear();
+        if (activeChunkPositions != null && !activeChunkPositions.isEmpty()) {
+            ticketedChunks.addAll(activeChunkPositions);
+        }
+    }
+
     // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
     public static final TicketType<ChunkPos> CHUNKPILOT_TICKET =
         TicketType.create("chunkpilot:forced", Comparator.comparingLong(ChunkPos::toLong), 31);
@@ -169,15 +219,29 @@ public class NeoForgePlatform implements PlatformAbstraction {
             ServerLevel level = findWorld(server, worldId);
             if (level == null) return false;
 
+            // v0.11.10: 标记该 chunk 为 CP 想生成的 (ChunkMapGenerationMixin 在 runGenerationTask
+            //   里查这个集合决定"提优先级"); 与 fabric FabricPlatform.requestChunkAsync 同口径.
+            markChunkRequested(ChunkPos.asLong(chunkX, chunkZ));
+
             // 检测 C2ME
             if (isC2MEPresent()) {
                 return requestChunkAsyncC2ME(level, chunkX, chunkZ);
             }
 
             // vanilla 路径
+            // v0.11.10 (专项代理 B1): **与 fabric 对齐** —— 用 addTicket(level=PREFETCH_TICKET_LEVEL=33)
+            //   取代 addRegionTicket(..., 31, ...).
+            //   javap 实证 (1.21.1~1.21.4 一致, DistanceManager.addRegionTicket 字节码):
+            //       ticket level = ChunkLevel.byStatus(FullChunkStatus.FULL) - distance = 33 - 31 = **2**
+            //     ⇒ 每张"预生成票"都把它**自己 31 区块半径内**的邻居一起要求加载到 FULL
+            //       (票等级 1-Lipschitz 传播), 而 CP 每 tick 都在投新票、票寿命 31 tick
+            //       ⇒ 加载/生成压力被摊到一个半径 31 的巨域上, 前方反而推进不动
+            //       (与 PORTING_REPORT §7.3b 的 "覆盖 0.075 / far_ahead 0.36" 同型).
+            //   fabric 侧 v0.11.5c 的权威写法就是 addTicket(..., 33, ...) = **只要求该区块自己到 FULL**,
+            //     不额外强制邻居 —— 这里照抄 (语义等价优先, 且比原来更贴近原版).
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addRegionTicket(
-                CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+            level.getChunkSource().chunkMap.getDistanceManager()
+                .addTicket(CHUNKPILOT_GEN_TICKET, pos, PREFETCH_TICKET_LEVEL, pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -202,8 +266,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
             }
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
+                // 与 fabric 同口径: 只要求该区块自己到 FULL (见 requestChunkAsync 的说明)
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().chunkMap.getDistanceManager()
+                    .addTicket(CHUNKPILOT_GEN_TICKET, pos, PREFETCH_TICKET_LEVEL, pos);
                 return true;
             }
 
@@ -232,8 +298,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
             LOG.debug("[Gen] C2ME requestChunkAsync failed for ({},{}): {}", chunkX, chunkZ, t.toString());
             // 回退到 vanilla
             try {
+                // 与 fabric 同口径: 只要求该区块自己到 FULL (见 requestChunkAsync 的说明)
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().chunkMap.getDistanceManager()
+                    .addTicket(CHUNKPILOT_GEN_TICKET, pos, PREFETCH_TICKET_LEVEL, pos);
                 return true;
             } catch (Throwable t2) {
                 return false;
@@ -544,9 +612,11 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (best >= 0) {
                 sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.nearest", pcx, pcz, best));
             }
-            // ⚠ 故意**不输出** chunkpilot.probe.marks(cpRequested/cpTicketed):
-            //   neoforge 侧没有 fabric 那套 requestedChunks/ticketedChunks 跟踪集合, 硬填 false
-            //   就是第二个 3ccbf0c 式的假信号。跑分脚本读不到 cpTicketed 就留空 —— 留空是诚实的。
+            // v0.11.10 (专项代理 B1): neoforge 现在**有了**真实集合 (见本文件 requestedChunks/
+            //   ticketedChunks), 因此与 fabric 同口径输出 cpRequested/cpTicketed —— 这是
+            //   "CP 的前瞻锚点票真的落在目标区块上"的**服务端证据** (bench_run 读 cpTicketed).
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.marks",
+                isChunkRequestedByCp(posLong), isChunkTicketedByCp(posLong)));
             sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.view", getServerRenderDistance()));
         } catch (Throwable t) {
             return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.failed", String.valueOf(t));

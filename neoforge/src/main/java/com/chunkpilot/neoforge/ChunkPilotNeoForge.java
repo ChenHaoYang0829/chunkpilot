@@ -92,6 +92,14 @@ public class ChunkPilotNeoForge {
         var cp = ChunkPilot.getInstance();
         if (cp == null) return;
 
+        // v0.11.10 (专项代理 B1): 清空本 tick 的 CP 请求集合.
+        //   CP 的 GenerationScheduler 会在本 tick 通过 NeoForgePlatform.requestChunkAsync 重新填充;
+        //   ChunkMapGenerationMixin 在 runGenerationTask 里查这个集合决定是否提优先级.
+        //   顺序与 fabric ServerInitializer(START_SERVER_TICK) 一致: 清空 → optimizer tick → 生成器 tick.
+        try {
+            NeoForgePlatform.clearRequestedChunks();
+        } catch (Throwable ignored) {}
+
         // v0.2.0 优化器 tick (扇形/ticket/集成)
         cp.getOptimizer().onServerTick();
 
@@ -112,6 +120,29 @@ public class ChunkPilotNeoForge {
         } catch (Throwable t) {
             // 安全: 不影响主 tick
         }
+
+
+        // v0.11.10 (专项代理 B1): 安全网 —— 把玩家脚下周围 r=2 的chunk 标记为"CP 请求".
+        //   与 fabric ServerInitializer 同口径: 即使 CP 生成器因为某种原因没请求到这些区块,
+        //   也保证它们不会被 ChunkMapGenerationMixin 的优先级判定漏掉 (玩家不能站在未生成的区块上).
+        //   只写"标记集合", 不发票、不改任何加载语义 ⇒ 关掉 generation 时也无需回退.
+        try {
+            MinecraftServer markServer = ServerLifecycleHooks.getCurrentServer();
+            if (markServer != null) {
+                for (ServerPlayer sp : markServer.getPlayerList().getPlayers()) {
+                    if (sp.level() instanceof ServerLevel) {
+                        int cx = sp.chunkPosition().x;
+                        int cz = sp.chunkPosition().z;
+                        for (int dx = -2; dx <= 2; dx++) {
+                            for (int dz = -2; dz <= 2; dz++) {
+                                NeoForgePlatform.markChunkRequested(
+                                    net.minecraft.world.level.ChunkPos.asLong(cx + dx, cz + dz));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
 
         // v0.3.0 生成器 tick (轨道优先生成器)
         // 异常隔离: 调度器崩了不能让整个 mod 崩

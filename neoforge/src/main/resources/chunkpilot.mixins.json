@@ -13,7 +13,11 @@
     "CheckExtensibleEnumsMixin",
     "ChunkMapNonBlockingUnloadMixin",
     "ServerChunkCacheAccessor",
-    "LevelNonBlockingCollisionMixin"
+    "LevelNonBlockingReadMixin",
+    "ServerChunkCacheNonBlockingMixin",
+    "ServerGamePacketListenerMoveMixin",
+    "ChunkMapTrackingViewMixin",
+    "ChunkMapGenerationMixin"
   ],
   "client": [],
   "injectors": {
