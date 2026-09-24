@@ -11,7 +11,7 @@ plugins {
 
 ext {
     // 版本常量
-    minecraftVersion = "1.21.1"
+    minecraftVersion = "1.20.1"
     
     // Fabric
     fabricLoaderVersion = "0.16.9"
@@ -19,7 +19,7 @@ ext {
     yarnMappings = "1.21.1+build.3"
     
     // NeoForge
-    neoforgeVersion = "21.1.77"
+    neoforgeVersion = "1.20.1-47.1.106"  // port/1.20.1: NeoForge 在 1.20.1 的 artifact 名是 forge
     
     // Architectury
     architecturyVersion = "13.0.8"
@@ -33,7 +33,9 @@ ext {
 subprojects {
     apply plugin: 'java'
     // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
-    if (project.name != 'fabric') {
+    // 2026-09-24 port/1.20.1: neoforge 在 1.20.1 上改用 ModDevGradle legacyforge (它自己做
+    //   Mojmap 开发环境 + SRG reobf), **不能**再套 architectury loom。
+    if (project.name != 'fabric' && project.name != 'neoforge') {
         apply plugin: 'dev.architectury.loom'
         // 2026-09-24: 不再应用 'architectury-plugin' —— 它只服务 @ExpectPlatform 代码生成与本项目零使用的
         //   platformPackage 设置; 实测 :common:test / :neoforge:build 在移除后仍通过。
@@ -46,7 +48,7 @@ subprojects {
         }
     }
 
-    if (project.name != 'fabric') {
+    if (project.name != 'fabric' && project.name != 'neoforge') {
         loom {
             silentMojangMappingsLicense()
         }

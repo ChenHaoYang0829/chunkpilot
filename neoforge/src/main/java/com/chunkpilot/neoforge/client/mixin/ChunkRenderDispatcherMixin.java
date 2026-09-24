@@ -17,7 +17,10 @@ public class ChunkRenderDispatcherMixin {
     @Inject(
         method = "updateView",
         at = @At("TAIL"),
-        remap = true
+        remap = true,
+        // 1.20.1 加固: 该目标方法在 1.20.1 上不存在 (编译期就警告 "Unable to determine
+        // descriptor") —— 原版默认 require=1 会让**客户端**直接崩。require=0 表示找不到就跳过。
+        require = 0
     )
     private void chunkpilot$reorderRenderQueue(CallbackInfo ci) {
         ChunkPilotClient client = ChunkPilotClient.getInstance();

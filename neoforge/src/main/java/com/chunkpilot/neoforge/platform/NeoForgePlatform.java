@@ -6,9 +6,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.server.ServerLifecycleHooks;
+// 1.20.1 (javap 实证): ChunkStatus 在 net.minecraft.world.level.chunk (没有 .status 子包)
+import net.minecraft.world.level.chunk.ChunkStatus;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.server.ServerLifecycleHooks;
 
 import java.lang.reflect.Method;
 import java.util.UUID;
@@ -79,7 +80,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
     public double getCurrentMspt() {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         if (server == null) return 0;
-        return server.getAverageTickTimeNanos() / 1_000_000.0;
+        // 1.20.1: 没有 getAverageTickTimeNanos(), 只有 getAverageTickTime() (已是毫秒)
+        return server.getAverageTickTime();
     }
 
     @Override

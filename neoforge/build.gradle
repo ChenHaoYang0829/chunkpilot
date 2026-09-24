@@ -1,100 +1,63 @@
 // =====================================================================================
-// 2026-09-24  port/1.20.1 说明: **这个模块在 1.20.1 上没有交付产物**, 而且它不是 1.20.1 的模块。
+// 2026-09-24  port/1.20.1: NeoForge 1.20.1 模块
 //
-// 本分支的 neoforge 模块仍然指向 main 的 1.21.1 (rootProject.minecraftVersion/neoforgeVersion),
-// 因为把 NeoForge 1.20.1 做成能用的产物**不是一个改坐标就能完成的事**。实测结论 (证据见
-// /data/cp-port/artifacts/1.20.1/REPORT.md §7-⑥):
-//   1) `net.neoforged:forge:1.20.1-47.1.106` 的包命名空间仍是 `net.minecraftforge.*`
-//      (universal jar 里 1156 个 class, `net/neoforged/` **0 个**) ⇒ 整个模块要改包名;
-//   2) 1.20.1 的生产运行期是 **SRG 成员名 + Mojmap 类名**
-//      (javap universal jar: `Method net/minecraft/server/MinecraftServer.m_129843_`)
-//      ⇒ main 那套 "remapJar 禁用 + 手写 refmap" 在 1.20.1 上不可能work, 必须要 SRG 重混淆;
-//   3) 唯一正规工具链 `net.neoforged.gradle.userdev`: 7.0.171 在 Gradle 9.6.1 上直接
-//      `NoSuchMethodError: org.gradle.util.internal.GUtil.toCamelCase`; **7.1.39 可以跑通**
-//      (neoForm recompile 全过), 但它给 1.20.1 的开发环境是 **srg channel** (成员名 `f_143034_`),
-//      而本项目源码用 Mojang 成员名 ⇒ 需要正确的 official-mappings 配置 (我试了
-//      `minecraft { mappings { official() } }`, 强制 rerun 后仍是 srg, 没找到正确写法);
-//   4) 网络层要按 Forge 47 的 `SimpleChannel` 重写 (没有 `RegisterPayloadHandlersEvent`/
-//      `PacketDistributor`); `PlayerChunkSender*` 两个 mixin 在 1.20.1 根本不存在;
-//      `CheckExtensibleEnumsMixin` 的目标是 NeoForge 内部类, Forge 47 里没有;
-//   5) 代理对 neoforged maven / Maven Central 的大文件反复 `Read timed out`,
-//      我是靠手工下载 + 塞 Gradle 模块缓存才把 NeoGradle 拉起来的 —— 再往下要做
-//      NeoForge 1.20.1 服务端安装 (数百 MB) 可靠性很低。
-// ⇒ 结论: **本分支只交付 fabric 产物** (`chunkpilot-fabric-1.20.1.jar`)。
-//   若后续要补 neoforge 1.20.1, 起点就是上面第 3 条的 official-mappings 配置。
-//   ⚠ 千万不要把本模块产出的 jar 当成 1.20.1 产物 —— 它是给 1.21.1 编译的。
+// 关键结论 (踩了两天的坑, 别再试错的路径):
+//   · 1.20.1 的 NeoForge artifact 名是 **forge**: `net.neoforged:forge:1.20.1-47.1.106`
+//     (包命名空间仍是 `net.minecraftforge.*`; universal jar 里 1156 个 class, net/neoforged/ 0 个)
+//   · 1.20.1 的生产运行期是 **Mojmap 类名 + SRG 成员名** (javap: MinecraftServer.m_129843_)
+//     ⇒ 必须做 SRG 重混淆, main 那套"禁用 remapJar + 手写 refmap"在 1.20.1 上不可能work
+//   · **能用的工具链是 ModDevGradle 的 legacyforge 子插件** (`net.neoforged.moddev.legacyforge`),
+//     它就是为 1.17~1.20.1 + early NeoForge 1.20.1 做的: 开发环境=Mojmap (源码原样编译),
+//     产物=`reobfJar` 自动转 SRG。
+//     试过但**走不通**的: `net.neoforged.gradle.userdev` 7.0.171 在 Gradle 9.6.1 上
+//     `NoSuchMethodError: GUtil.toCamelCase`; 7.1.39 能跑但给 1.20.1 的是 srg channel
+//     (成员名 f_143034_), 源码是 Mojmap ⇒ 编不过, 且 `minecraft { mappings { official() } }`
+//     对 1.20.1 不生效。
+//   · 产物路径: **`build/libs/chunkpilot-<modVersion>-neoforge.jar`** (已经 reobfJar 成 SRG)。
+//     不是 build/devlibs/ —— 那是旧 loom 方案的路径。
 // =====================================================================================
+
+plugins {
+    id 'net.neoforged.moddev.legacyforge' version '2.0.147'
+}
+
+version = rootProject.modVersion
+group = rootProject.modGroup
 
 repositories {
     maven { url = file("../.local-maven-repo") }
+    maven { url "https://maven.neoforged.net/releases/" }
+    maven { url "https://maven.minecraftforge.net/" }
+    mavenCentral()
 }
 
-configurations.all {
-    resolutionStrategy.eachDependency { details ->
-        // 本地仓库有 11.0.4 但 loader 要求 11.0.3，强制用 11.0.4
-        if (details.requested.group == 'cpw.mods' && details.requested.name == 'modlauncher') {
-            details.useVersion '11.0.4'
-        }
-        // 本地仓库有 3.0.8 但 loader 要求 3.0.7，强制用 3.0.8
-        if (details.requested.group == 'cpw.mods' && details.requested.name == 'securejarhandler') {
-            details.useVersion '3.0.8'
-        }
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
-// 2026-09-24 死代码清理: 这里原有 architectury { platformSetupLoomIde(); neoForge { platformPackage = "forge" } }。
-//   `platformPackage` 只服务 Architectury 的 @ExpectPlatform 代码生成, 而本项目**零处使用** @ExpectPlatform
-//   (平台实现是各模块直接 implements + 入口显式构造注入); `platformSetupLoomIde()` 只影响 IDE/run-config。
-//   实测移除后 :common:test / :neoforge:build 均通过。
-dependencies {
-    modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
-
-    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
-
-    // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
-    //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
-    //   type="required" 的依赖**, 也就是说玩家被强制安装一个本模组完全用不到的 Architectury API ——
-    //   那条声明也已一并删除(见 META-INF/neoforge.mods.toml)。
-
-    // Mixin 注解
-    // 2026-09-24 死代码盘点: mixinextras **完全未使用** (全仓库 0 处 WrapOperation/
-    //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
-    //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
-
-    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
-
-    // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
-    // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
-    // 拖进构建图, 而 common 关掉了 jar (jar.enabled=false), 该任务必然失败,
-    // 导致整个 :neoforge:build 崩掉 (2026-09-20 实测: 唯一失败任务就是它)。
-
-    // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
-    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
-    mappings loom.officialMojangMappings()
+legacyForge {
+    enable {
+        // 1.20.1 的 NeoForge (artifact 名 forge)。走 net.neoforged:forge
+        neoForgeVersion = rootProject.neoforgeVersion
+        // 交付 jar 必须是 SRG (生产运行期就是 SRG 成员名)
+        obfuscateJar = true
+    }
+    // mixin refmap: legacyforge 的 MixinExtension 会按 inMappings/outMappings 生成 SRG refmap
+    // (由下方 `mixin { }` 块注册配置)
 }
 
-loom {
-    // 2026-08-01: 显式使用 Mojang official mappings
-    officialMojangMappings()
-
-    mixin {
-        defaultRefmapName = "chunkpilot.refmap.json"
-    }
-
-    runs {
-        server {
-            server()
-        }
-        client {
-            client()
-        }
-    }
+// mixin 配置注册 (插件注册了名为 `mixin` 的扩展)
+//   `config` = mixin 配置文件名; `add(sourceSet, refmapName)` = 要生成的 refmap 文件名
+//   (二者别搞混: 一开始把配置名传进 add(), 结果 refmap 也叫 chunkpilot.mixins.json →
+//    jar 里和 src/main/resources 的同名文件撞车, :neoforge:jar 直接失败)
+mixin {
+    config 'chunkpilot.mixins.json'
+    add sourceSets.main, 'chunkpilot.refmap.json'
 }
 
+// common 模块源码直接并进本模块编译 (与 fabric/neoforge 其它版本一致; 不写 project(':common') 以免拖进 :common:remapJar)
 sourceSets {
     main {
         java {
@@ -106,66 +69,26 @@ sourceSets {
     }
 }
 
-// NeoForge 1.21.1 runtime 使用 Mojang 命名 class,而 loom 默认输出 intermediary 命名 remapJar
-// 会导致 NoClassDefFoundError (例如 class_2561 Component)。
-// 解决方案: 禁用 remapJar + 后处理 refmap 为 Mojang 命名
-tasks.named('remapJar').configure { enabled = false }
-
-// 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
-tasks.register('fixRefmap') {
-    doLast {
-        def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")
-        if (!jarFile.exists()) {
-            println "Jar not found: $jarFile"
-            return
-        }
-        def tmpDir = file("$buildDir/tmp/fixrefmap")
-        tmpDir.mkdirs()
-        ant.unjar(src: jarFile, dest: tmpDir)
-        
-        // 写新的 Mojang 命名 refmap
-        def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
-        refmapFile.text = '''{
-  "mappings": {
-    "com/chunkpilot/neoforge/mixin/ChunkMapMixin": {
-      "updatePlayerPos": "Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V",
-      "move": "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderMixin": {
-      "collectChunksToSend": "Lnet/minecraft/server/network/PlayerChunkSender;collectChunksToSend(Lnet/minecraft/server/level/ChunkMap;Lnet/minecraft/world/level/ChunkPos;)Ljava/util/List;"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderSendMixin": {
-      "sendNextChunks": "Lnet/minecraft/server/network/PlayerChunkSender;sendNextChunks(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
-      "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
-    }
-  }
-}
-'''
-        // 重打包
-        ant.delete(file: jarFile)
-        ant.zip(destfile: jarFile, basedir: tmpDir)
-        println "Fixed refmap in $jarFile"
-    }
+dependencies {
+    // Mixin 注解处理器 (生成 refmap)
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    compileOnly 'org.spongepowered:mixin:0.8.5'
 }
 
-// 让 jar 任务依赖 fixRefmap, 确保 build 后 refmap 是 Mojang 命名
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// 交付产物名固定成 chunkpilot-<modVersion>-neoforge.jar, 便于 artifacts/1.20.1 落地
+tasks.named('jar', Jar).configure {
+    archiveFileName = "chunkpilot-${project.version}-neoforge.jar"
+    // 兜底: 资源目录与生成物万一重名, 以先到的为准而不是让构建失败
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// reobfJar 的输出同样命名, 保证交付的是 SRG 版
 afterEvaluate {
-    tasks.named('jar').configure { finalizedBy('fixRefmap') }
-}
-// 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
-//   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
-//   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的 1.21.x 上也"允许加载",
-//      然后以 mixin 目标缺失的形式崩在启动期, 比明确拒绝更难排查。
-def _mc = project.property('minecraftVersion').toString()
-def _mcParts = _mc.tokenize('.')
-def _mcNext = (_mcParts[0..-2] + [(_mcParts[-1] as int) + 1]).join('.')
-def mcRange = "[${_mc},${_mcNext})"
-
-processResources {
-    inputs.property "mcRange", mcRange
-    filesMatching("META-INF/neoforge.mods.toml") {
-        expand(mcRange: mcRange)
+    tasks.matching { it.name == 'reobfJar' }.configureEach { t ->
+        t.archiveFileName.set("chunkpilot-${project.version}-neoforge.jar")
     }
 }

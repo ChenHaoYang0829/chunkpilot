@@ -1,0 +1,41 @@
+# 1.20.1 的 NeoForge/Forge 用 META-INF/mods.toml (neoforge.mods.toml 是 1.20.5+ 的名字)
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+issueTrackerURL = ""
+
+[[mods]]
+modId = "chunkpilot"
+version = "0.10.10-alpha"
+displayName = "ChunkPilot"
+authors = "ChunkPilot Team"
+description = '''
+Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).
+[MC 1.20.1 / NeoForge 47.x port]
+'''
+
+# 1.20.1 的依赖 modId 是 forge (不是 neoforge)
+[[dependencies.chunkpilot]]
+modId = "forge"
+type = "required"
+# Forge 1.20.1 的依赖项**必须**有 mandatory (缺了会 "Missing required field mandatory in dependency")
+mandatory = true
+versionOrder = ""
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.chunkpilot]]
+modId = "minecraft"
+type = "required"
+mandatory = true
+versionOrder = ""
+versionRange = "[1.20.1,1.20.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[mixins]]
+config = "chunkpilot.mixins.json"
+
+[[mixins]]
+config = "chunkpilot.client.mixins.json"

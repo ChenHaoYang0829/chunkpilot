@@ -21,7 +21,9 @@ public class SodiumRenderSectionManagerMixin {
         method = "shouldPrioritizeTask",
         at = @At("HEAD"),
         cancellable = true,
-        remap = false
+        remap = false,
+        // 1.20.1 加固: Sodium 内部方法名跨版本会变; require=0 → 找不到就跳过
+        require = 0
     )
     private void chunkpilot$directionAwarePriority(Object section, float distance, CallbackInfoReturnable<Boolean> cir) {
         ChunkPilotClient client = ChunkPilotClient.getInstance();

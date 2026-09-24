@@ -19,16 +19,16 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.event.server.ServerStartedEvent;
-import net.neoforged.neoforge.event.server.ServerStoppedEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
-import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +42,7 @@ public class ChunkPilotNeoForge {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("ChunkPilot");
 
+    // Forge 47 (1.20.1) 支持 @Mod 构造器注入 IEventBus (与 NeoForge 21.x 同形), 无需改签名。
     public ChunkPilotNeoForge(IEventBus modEventBus) {
         LOGGER.info("ChunkPilot initializing on NeoForge...");
 
@@ -49,8 +50,10 @@ public class ChunkPilotNeoForge {
         new ChunkPilot(platform);
 
         // v0.4.0: 网络注册
+        // 1.20.1 (Forge 47): 网络层降级为 no-op —— 见 NeoForgeNetworkSender 的类注释
+        // (1.21.x 的 RegisterPayloadHandlersEvent 在 Forge 47 不存在; 需要 SimpleChannel 重写)
         NeoForgeNetworkSender networkSender = new NeoForgeNetworkSender();
-        modEventBus.addListener(networkSender::register);
+        networkSender.register();
         ChunkPilot.getInstance().initNetwork(networkSender);
         networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
             @Override
@@ -63,7 +66,7 @@ public class ChunkPilotNeoForge {
             }
         });
 
-        NeoForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(this);
 
         LOGGER.info("ChunkPilot initialized on NeoForge");
     }
@@ -88,7 +91,10 @@ public class ChunkPilotNeoForge {
     }
 
     @SubscribeEvent
-    public void onServerTick(ServerTickEvent.Pre event) {
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        // 1.20.1 (Forge 47): ServerTickEvent 分 START/END 两个 phase, 这里只处理 START
+        // (NeoForge 21.x 用的是独立的 ServerTickEvent.Pre)
+        if (event.phase != TickEvent.Phase.START) return;
         var cp = ChunkPilot.getInstance();
         if (cp == null) return;
 

@@ -1,5 +1,7 @@
 pluginManagement {
     repositories {
+        // 2026-09-24 port/1.20.1: ModDevGradle (net.neoforged.moddev.legacyforge) 的 plugin marker
+        maven { url "https://maven.neoforged.net/releases/" }
         maven { url "https://maven.fabricmc.net/" }
         maven { url "https://maven.architectury.dev/" }
         maven { url "https://repo.papermc.io/repository/maven-public/" }

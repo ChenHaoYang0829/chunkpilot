@@ -21,7 +21,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
+    // 1.20.1 (javap 实证): Connection 只有 send(Packet) 与 send(Packet, PacketSendListener),
+    // 没有 1.21 的三参 send(Packet, PacketSendListener, boolean); 而 send(Packet) 会转到两参版本
+    // (字节码: aload_1; aconst_null; invokevirtual send:(Packet;PacketSendListener;)V)
+    // ⇒ 挂在两参版本上, 出向包一个都不漏。
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;)V", at = @At("HEAD"))
     private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
