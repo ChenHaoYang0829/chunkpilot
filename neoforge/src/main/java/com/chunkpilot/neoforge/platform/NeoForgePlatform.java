@@ -111,6 +111,33 @@ public class NeoForgePlatform implements PlatformAbstraction {
     //     (20,2) (1,2) (0,6) (0,2) (0,12) (0,15) (300,15) (40,14) (1,18).
     public static final TicketType CHUNKPILOT_GEN_TICKET = new TicketType(200L, CP_TICKET_FLAGS);
 
+    /**
+     * B3 专项 (2026-09-25) 修: CP **预生成**票据的等级 = **33** (= FULL 生成, 不参与 block/entity tick),
+     * 与 fabric 侧 `FabricPlatform.PREFETCH_TICKET_LEVEL` 完全一致。
+     *
+     * ============================ 这里原来是一个灾难性 bug (javap + 实测双证) ============================
+     * 原代码走 `ServerChunkCache.addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31)`,
+     * 而 javap 实证 (minecraft-server-patched-21.11.45):
+     *   `ServerChunkCache.addTicketWithRadius(TicketType, ChunkPos, int radius)`
+     *     → `TicketStorage.addTicketWithRadius(...)`
+     *       → `new Ticket(type, ChunkLevel.byStatus(FullChunkStatus.FULL) **- radius**)`
+     *   ⇒ 第三个参数是 **radius 而不是 level**, 实际等级 = **33 - 31 = 2**。
+     *
+     * 等级 2 比 ENTITY_TICKING(31) 还"深" ⇒ 每请求一个区块就在它周围拉起一个
+     * **半径 31 区块 (63x63 ≈ 3969 块) 的深加载区**。实测后果 (2026-09-25, 规范口径):
+     *   · 探针票等级 own=2 / lead=8~21 (而正确值应为 31~33) —— 直接看到 level=33-radius;
+     *   · mspt 尖峰 100~190ms、`Can't keep up! Running 9585ms / 14726ms behind` (294 tick 掉队);
+     *   · 覆盖 0.0458~0.3833、前沿深度 ahead 0.1~0.5 / behind 15+ ⇒ 区块全堆在身后,
+     *     前方永远追不上 —— 这正是 §7.3b 记录的"1.21.11 同 jar 同口径 1.0 vs 0.058 摆动"的来源。
+     * 对照实验 (同一 jar, 三个 nonBlocking 开关全关 + forward_window 关): 覆盖仍 0.0958
+     *   ⇒ **与本次移植的 mixin 无关**, 是本平台层票据等级算错。
+     *
+     * 修法: 与 fabric/1.21.10 同口径 —— 直接用 `addTicket(new Ticket(type, 33), pos)`。
+     * (`removeChunkTicket` 的 `removeTicketWithRadius(type,pos,33-level)` 反解是**对的**,
+     *  因为那里 level = 33 - radius 成立, 故不动。)
+     */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
     // C2ME 兼容: 检测 C2ME 是否加载
     private Boolean c2meCached = null;
     private Object c2meScheduler = null; // TheChunkSystem instance, lazily resolved
@@ -266,7 +293,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
             // vanilla 路径
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+            // B3 专项修: 原为 addTicketWithRadius(...,31) ⇒ level = 33-31 = 2 (灾难性深加载),
+            //   现与 fabric 同口径: level 33 = FULL 生成.
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -292,7 +321,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                // B3 专项修: 原为 addTicketWithRadius(...,31) ⇒ level = 33-31 = 2 (灾难性深加载),
+            //   现与 fabric 同口径: level 33 = FULL 生成.
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             }
 
@@ -322,7 +353,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                // B3 专项修: 原为 addTicketWithRadius(...,31) ⇒ level = 33-31 = 2 (灾难性深加载),
+            //   现与 fabric 同口径: level 33 = FULL 生成.
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             } catch (Throwable t2) {
                 return false;

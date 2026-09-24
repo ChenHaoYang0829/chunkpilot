@@ -23,8 +23,16 @@ dependencies {
     modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
 
     // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
+    // 2026-09-24 (B3 专项, 1.21.9/1.21.11): FML 版本从 4.0.31 → 10.0.32。
+    //   为什么必须改: 本版本运行期的 FancyModLoader 是 **10.0.x**
+    //   (1.21.9 服务端 = 10.0.14, 1.21.11 = 10.0.36, javap 实证),
+    //   而 4.0.31 是 NeoForge 21.0/21.1 时代的产物 —— 两者的
+    //   `FMLEnvironment` **API 不同**: 4.0.31 只有公开字段 `dist`,
+    //   10.0.x 只有 `getDist()`。用 4.0.31 编出来的字节码在真实服务端上会
+    //   `NoSuchFieldError: dist` 崩在 mod 构造期 (编译期看不出来)。
+    //   10.0.32 与运行期同属 10.0.x, 且本机 gradle 缓存里已有 (离线可解析)。
+    implementation "net.neoforged.fancymodloader:loader:10.0.32"
+    implementation "net.neoforged.fancymodloader:earlydisplay:10.0.32"
     implementation "net.neoforged:bus:8.0.2"
 
     // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,

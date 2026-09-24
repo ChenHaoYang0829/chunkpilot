@@ -47,7 +47,7 @@ public class ChunkPilotNeoForge {
         new ChunkPilot(platform);
 
         // 客户端物理侧: 只留一条启动日志 (1.0.0 起客户端无渲染侧功能)
-        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+        if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
             com.chunkpilot.neoforge.client.ChunkPilotNeoForgeClient.init();
         }
 
