@@ -101,6 +101,30 @@ public class NeoForgePlatform implements PlatformAbstraction {
     // ChunkPilot 自定义 ticket 类型 (timeout 沿用原 create(...) 的 expireTicks 值).
     public static final TicketType CHUNKPILOT_TICKET = new TicketType(31L, CP_TICKET_FLAGS);
 
+    /**
+     * CP **预生成**统一使用的票等级 = 33 (= FULL 生成, 但不参与 block/entity tick)。
+     *
+     * ⚠⚠ 26.3 血案 (2026-09-25, 与 port/1.21.9/10/11 的 B3 同源, 已在 26.3 独立复核):
+     *   本类原先有三处写成 `getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31)`,
+     *   而 `addTicketWithRadius(type,pos,radius)` 的 **radius 不是票等级** —— javap 实证
+     *   (`TicketStorage.addTicketWithRadius`, 26.3 内层 server jar):
+     *       getstatic FullChunkStatus.FULL → ChunkLevel.byStatus(FullChunkStatus) → iload radius → isub
+     *       → new Ticket(type, byStatus(FULL) - radius)
+     *   而 `ChunkLevel.byStatus(FullChunkStatus.FULL)` = **33** (tableswitch: FULL→33 / BLOCK_TICKING→32 /
+     *   ENTITY_TICKING→31)。⇒ radius=31 实际得到票等级 **33-31 = 2**, 比 ENTITY_TICKING(31) 还深,
+     *   于是**每请求一个区块就把周围半径 31 区块 (63×63 ≈ 3969 块) 拉进深加载/实体 tick**。
+     *
+     *   实测症状 (26.3 neoforge, 同口径): 探针 `own_ticket_level` 落到 **2.0~3.5**(正常应是 31),
+     *   覆盖 0.0833~0.3708、`moved too quickly` 9~16 次被拉回、前方前沿 `ahead` 只有 0.4~4.9,
+     *   而 `lead_loaded_srv=1.0` —— "票确实生效、但生效成了灾难"。
+     *
+     *   ⇒ 修法: **一律用 `addTicket(new Ticket(type, 等级), pos)` 显式给等级**, 不再碰半径 API。
+     *   撤票仍可走 `removeTicketWithRadius(type,pos, byStatus(FULL)-level)` —— 它反推出的等级恰好等于
+     *   原始 level (见 removeChunkTicket), 是对称的。`common` 模块新增的
+     *   `TicketRadiusGuardTest` 会机械守住"平台代码里不得再出现 addTicketWithRadius"。
+     */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
     // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成)
     //   timeout 从 31 → 200 (与 fabric 侧一致): 原实现与 CHUNKPILOT_TICKET 的 31 撞车, 而
     //   1.21.11 的 `TicketType` 是 record, `equals` 只比较 (timeout, flags) —— `TicketStorage`
@@ -243,7 +267,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
      * 注入 EXTERNAL ticket, 目标状态 SERVER_ACCESSIBLE_CHUNK_SENDING,
      * 走 C2ME 的并行生成管道.
      *
-     * 如果没有 C2ME: 用 vanilla addTicketWithRadius 触发生成 (1.21.11 的 addRegionTicket).
+     * 如果没有 C2ME: 用 `addTicket(new Ticket(CPS_GEN, PREFETCH_TICKET_LEVEL), pos)` 触发生成。
+     *   ⚠ **不要**用 `addTicketWithRadius` —— 它的第三参是 radius, 会被换算成 `33 - radius`
+     *     (见本类 PREFETCH_TICKET_LEVEL 的注释; 26.3 三处血案即此)。
      */
     @Override
     public boolean requestChunkAsync(int worldId, int chunkX, int chunkZ) {
@@ -265,8 +291,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
             }
 
             // vanilla 路径
+            // ⚠ 原为 addTicketWithRadius(..., 31) ⇒ 实际等级 33-31=2 (见 PREFETCH_TICKET_LEVEL 注释)
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -292,7 +319,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             }
 
@@ -322,7 +349,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             } catch (Throwable t2) {
                 return false;
