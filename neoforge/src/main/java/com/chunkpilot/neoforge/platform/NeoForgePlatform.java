@@ -146,6 +146,58 @@ public class NeoForgePlatform implements PlatformAbstraction {
         return 0;
     }
 
+
+    // ========== 二阶段 B2 整改: CP 请求/持票 chunk 记账 (供 ChunkMapGenerationMixin 判据用) ==========
+    //
+    // 为什么需要: fabric 的 ChunkMapGenerationMixin 用 FabricPlatform.isChunkRequestedByCp /
+    //   isChunkTicketedByCp 判断"这个生成任务是不是 CP 自己发起的". neoforge 平台此前**没有**这两个
+    //   集合 (PORTING_REPORT §7.5.0c 明说"不输出 cpRequested/cpTicketed"), 这正是
+    //   `generation.exclusiveGenerationNoC2me` 在 neoforge 上只能空转的原因 (§7.5.1a).
+    //
+    // 安全性 (作业书 §3.4「不引入新依赖、不改原版字段语义」):
+    //   本记账**只由 CP 自己的 requestChunkAsync / addChunkTicket / removeChunkTicket 写入**,
+    //   不触碰任何原版字段/方法/返回值, 也不改变票的语义; 关掉
+    //   `[generation] enabled` 后 ChunkMapGenerationMixin 根本不会读它.
+    //   语义与 fabric 侧逐条一致: requested = 本 tick 请求集合 (每 tick 由入口清空),
+    //   ticketed = 跨 tick 的活跃 CP 票集合 (每 5 秒用真实活跃票集合重建).
+    private static final java.util.Set<Long> requestedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<Long> ticketedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 标记某 chunk 为 CP 想生成的 (由 requestChunkAsync 调用). */
+    public static void markChunkRequested(long chunkPosLong) { requestedChunks.add(chunkPosLong); }
+
+    /** 清空本 tick 的 CP 请求集合 (每 tick 开头由 ChunkPilotNeoForge 调用). */
+    public static void clearRequestedChunks() { requestedChunks.clear(); }
+
+    /** 查询某 chunk 是否被 CP 请求生成 (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkRequestedByCp(long chunkPosLong) { return requestedChunks.contains(chunkPosLong); }
+
+    /** 标记某 chunk 有活跃 CP ticket (由 addChunkTicket 调用). */
+    public static void markChunkTicketed(long chunkPosLong) { ticketedChunks.add(chunkPosLong); }
+
+    /** 取消某 chunk 的 CP ticket 标记 (由 removeChunkTicket 调用). */
+    public static void unmarkChunkTicketed(long chunkPosLong) { ticketedChunks.remove(chunkPosLong); }
+
+    /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkTicketedByCp(long chunkPosLong) { return ticketedChunks.contains(chunkPosLong); }
+
+    /** 与 fabric 同法: 用真实活跃票集合重建标记集合 (旧实现只增不减, 会留下永久残留). */
+    @Override
+    public void rebuildCpTicketMarks(java.util.Collection<Long> activeChunkPositions) {
+        ticketedChunks.clear();
+        if (activeChunkPositions != null && !activeChunkPositions.isEmpty()) {
+            ticketedChunks.addAll(activeChunkPositions);
+        }
+    }
+
+    /** /chunkpilot status 用: 被替换掉的 park 次数 (与 fabric 同名指标, 二阶段 B2 验收证据之一). */
+    @Override
+    public long getParkSubstitutions() {
+        return com.chunkpilot.neoforge.util.NonBlockingStats.parkSubstitutions();
+    }
+
     @Override
     public boolean addChunkTicket(int worldId, int chunkX, int chunkZ, int ticketLevel) {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
@@ -157,6 +209,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         // port/1.21.10: DistanceManager.addTicket → ServerChunkCache.addTicket(new Ticket(type, level), pos)
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         world.getChunkSource().addTicket(new net.minecraft.server.level.Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
+        markChunkTicketed(pos.toLong());
         return true;
     }
 
@@ -168,6 +221,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         if (world == null) return false;
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
+        unmarkChunkTicketed(pos.toLong());
         chunkpilot$removeTicket(world, CHUNKPILOT_TICKET, pos, ticketLevel);
         return true;
     }
@@ -214,6 +268,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
             level.getChunkSource().addTicket(
                 new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
+            markChunkRequested(pos.toLong());
             return true;
         } catch (Throwable t) {
             return false;

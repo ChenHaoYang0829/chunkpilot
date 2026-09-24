@@ -7,7 +7,7 @@ issueTrackerURL = ""
 modId = "chunkpilot"
 # port/1.21.6: 与 rootProject.modVersion / fabric.mod.json 对齐 (原来 jar 内自报 0.5.0-alpha,
 #   与文件名 neoforge-0.10.10-alpha-dev.jar 和 fabric 侧 0.10.10-alpha 不一致)。
-version = "0.10.10-alpha"
+version = "1.0.0"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''
