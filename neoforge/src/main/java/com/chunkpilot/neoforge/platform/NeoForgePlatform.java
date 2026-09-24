@@ -206,7 +206,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (server == null) return false;
             ServerLevel level = findWorld(server, worldId);
             if (level == null) return false;
-            Object holder = chunkpilot$invokeByName(level.getChunkSource(), "getChunkHolder",
+            // javap 实证 (1.21.10): ServerChunkCache 上没有 getChunkHolder(long), 只有
+            //   `private ChunkHolder getVisibleChunkIfPresent(long)` —— 与 fabric 侧 accessor 同一个方法名。
+            Object holder = chunkpilot$invokeByName(level.getChunkSource(), "getVisibleChunkIfPresent",
                 new Class<?>[]{long.class}, new Object[]{ChunkPos.asLong(chunkX, chunkZ)});
             if (holder == null) return false;
             Object fut = chunkpilot$invokeByName(holder, "getFullChunkFuture", new Class<?>[0], new Object[0]);
@@ -231,13 +233,27 @@ public class NeoForgePlatform implements PlatformAbstraction {
         }
     }
 
-    /** 按名反射调用 (NeoForge 运行时是 Mojang 命名, 可直接按名找)。 */
+    /**
+     * 按名反射调用 (NeoForge 运行时是 Mojang 命名, 可直接按名找)。
+     *
+     * ⚠ 必须用 **getDeclaredMethod + setAccessible** 并向上遍历父类 —— `ServerChunkCache.getChunkHolder(long)`
+     * 与 `ChunkHolder` 的部分方法**不是 public**, 用 `getMethod` 会恒失败(实测: `ticketLevel` 恒 -1)。
+     * (fabric 侧因为运行期是 intermediary 命名, 连按名找都不行, 必须走 mixin accessor。)
+     */
     private static Object chunkpilot$invokeByName(Object target, String name,
                                                   Class<?>[] paramTypes, Object[] args) {
         try {
-            java.lang.reflect.Method m = target.getClass().getMethod(name, paramTypes);
-            m.setAccessible(true);
-            return m.invoke(target, args);
+            Class<?> cur = target.getClass();
+            while (cur != null) {
+                try {
+                    java.lang.reflect.Method m = cur.getDeclaredMethod(name, paramTypes);
+                    m.setAccessible(true);
+                    return m.invoke(target, args);
+                } catch (NoSuchMethodException ignored) {
+                    cur = cur.getSuperclass();
+                }
+            }
+            return null;
         } catch (Throwable t) {
             return null;
         }
@@ -270,7 +286,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             boolean holderPresent = false;
             String statusName = "?";
             try {
-                Object holder = chunkpilot$invokeByName(level.getChunkSource(), "getChunkHolder",
+                Object holder = chunkpilot$invokeByName(level.getChunkSource(), "getVisibleChunkIfPresent",
                     new Class<?>[]{long.class}, new Object[]{posLong});
                 if (holder != null) {
                     holderPresent = true;
