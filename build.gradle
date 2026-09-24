@@ -11,15 +11,15 @@ plugins {
 
 ext {
     // 版本常量
-    minecraftVersion = "26.1"
+    minecraftVersion = "26.1.2"
     
     // Fabric
     fabricLoaderVersion = "0.19.5"
     fabricApiVersion = "0.155.3+26.1.2"
-    yarnMappings = "26.1+build.1"
+    yarnMappings = "26.1.2+build.1"
     
     // NeoForge
-    neoforgeVersion = "26.1.0.19-beta"
+    neoforgeVersion = "26.1.2.109"
     
     // Architectury
     architecturyVersion = "13.0.8"
