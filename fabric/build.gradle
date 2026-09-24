@@ -1,5 +1,5 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.16.3'
+    id 'net.fabricmc.fabric-loom' version '1.17.21'
     id 'java'
 }
 version = rootProject.modVersion
@@ -14,14 +14,16 @@ repositories {
     gradlePluginPortal()
 }
 dependencies {
+    // 2026-09-24 (port/26.2): MC 26.x **不再混淆**(26.1 起官方 jar 直接是 Mojang 名),
+    //   因此: ① 没有 mappings 可下(26.2 的 version.json 里没有 client_mappings/server_mappings,
+    //   loom.officialMojangMappings() 会抛 "Failed to find official mojang mappings for 26.2");
+    //   ② 必须用 **不重映射** 的插件变体 `net.fabricmc.fabric-loom`(1.14+ 起提供, 实现类
+    //   LoomNoRemapGradlePlugin), 它跳过所有 remap; ③ mod 依赖改用普通 implementation
+    //   (官方指引: "Any use of modImplementation ... should be switched out for the standard
+    //   implementation or compileOnly"); ④ 产物由 jar 直接给出(没有 remapJar)。
     minecraft "com.mojang:minecraft:${fabMC}"
-    // v0.5.1: 恢复 official mappings (1.21.3 fabric 默认)
-    // 原因: v0.5.1 删除原本依赖 yarn 名的 chunk_send/load mixin, 改为完全主动驱动
-    //       所有 onPlayerChunkUpdate/getChunkToSend 调用都去掉, 改为每 tick 主动遍历玩家
-    //       mixin 只保留 client 端 (ChunkRenderDispatcher, 警告但不报错)
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${fabLoader}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
+    implementation "net.fabricmc:fabric-loader:${fabLoader}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabApi}"
     // 2026-09-24 死代码盘点: 这行显式 pin 是多余的 —— fabric-api 聚合包已包含 networking-api-v1,
     //   且该 pin 的版本 (4.3.3) 与 fabric-api 版本不一致, 注释"1.21.2 需要"也已过时 (模块早已是 1.21.3)。
     //   实测删除后 :fabric:build 仍 BUILD SUCCESSFUL。networking 能力本身由 fabric-api 提供, 不受影响。
@@ -38,12 +40,10 @@ loom {
         jvmArgs '-Xmx16G', '-Xms4G'
     }
 }
-// 2026-08-01: loom 1.16+ 默认不启用 mixin AP, 需要显式开启才能生成 refmap
-loom.mixin {
-    useLegacyMixinAp = true
-    refmapTargetNamespace = "intermediary"
-    defaultRefmapName = "chunkpilot.refmap.json"
-}
+// 2026-09-24 (port/26.2): 不再启用 legacy mixin AP / refmap。
+//   26.x 的运行期命名空间 == 编译期命名空间(Mojang 官方名), mixin 注解里的目标名可以**直接命中**,
+//   不需要 refmap 把 official 名翻译成 intermediary。继续生成 intermediary refmap 反而会
+//   让注解被改写成不存在的 intermediary 名(class_xxxx)而静默失效(见 1.21.11 报告 §7.3 的同类坑)。
 // 引用 common 源码 (不依赖 common 项目, 避免 architectury classpath 污染)
 sourceSets {
     main {
@@ -84,7 +84,8 @@ dependencies {
 //   手写极容易漏改(实测出现过"1.21.5 的 jar 里写着 minecraft=1.21.3"⇒ 在 1.21.5 上被 loader 直接拒绝加载)。
 processResources {
     inputs.property "mcVersion", fabMC
+    inputs.property "modVersion", rootProject.modVersion
     filesMatching("fabric.mod.json") {
-        expand(mcVersion: fabMC)
+        expand(mcVersion: fabMC, modVersion: rootProject.modVersion)
     }
 }

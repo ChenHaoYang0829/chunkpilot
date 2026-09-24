@@ -1,15 +1,13 @@
-plugins {
-    id 'dev.architectury.loom'
-}
+// 2026-09-24 (port/26.2): common **不再应用任何 loom 插件**。
+//   原因: common 源码零 MC 类型引用(`grep '^import net.minecraft' common/src` 为空, 已实证),
+//   它只需要 fabric-loader 的 @Environment 注解。而 26.x 没有 mappings ⇒ remap 版 loom
+//   (dev.architectury.loom) 在配置期就直接失败("Failed to find official mojang mappings for 26.2")。
+//   去掉 loom 后 common 只是普通 java 模块, 构建更快且不再拖一份 MC 缓存。
 
 dependencies {
     // 依赖 fabric loader 仅用于 @Environment 注解
-    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
+    implementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
 
-    // 2026-08-01: common 源码不含 MC 直接类型引用 (用 PlatformAbstraction 抽象层)
-    // 但 loom 编译需要 MC, 这里跟随 rootProject.minecraftVersion (曾硬编码 1.21.2: 会让 :common 去下另一份 MC, 慢代理下卡死构建)
-    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
-    mappings loom.officialMojangMappings()
 
     // P0: 单元测试 — common 模块零 MC 引用, 测试也只用 JUnit + chunkpilot.* 类
     testImplementation platform('org.junit:junit-bom:5.10.2')

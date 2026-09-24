@@ -1,73 +1,37 @@
-repositories {
-    maven { url = file("../.local-maven-repo") }
+// ==================================================================================
+// 2026-09-24 (port/26.2): 整个文件按 MC 26.x 的现实重写 —— 改用 **NeoForge 官方插件**
+//   `net.neoforged.moddev`(moddev-gradle), 不再用 architectury-loom + 手写 refmap。
+//
+// 为什么必须换 (逐条都有实证, 见 artifacts/26.2/REPORT.md §2):
+//   1. MC 26.1 起**官方 jar 不再混淆**(26.2 的 server/client jar 里直接是
+//      `net/minecraft/server/level/ChunkMap.class` 这种 Mojang 名, 0 个混淆类名)。
+//   2. 因此 26.2 的 `version.json` 里**没有** `client_mappings`/`server_mappings`
+//      ⇒ `loom.officialMojangMappings()` 直接抛
+//      `RuntimeException: Failed to find official mojang mappings for 26.2`;
+//      `net.fabricmc:intermediary:26.2` 也不存在(官方 meta 给的是 `0.0.0` = 空映射)。
+//   3. 既然运行期命名空间 == 编译期命名空间, `remapJar` / 手写 Mojang refmap / `fixRefmap`
+//      这一整套(本工程 1.21.x 时代为"禁用 remapJar + 后处理 refmap"付出的复杂度)**全部不需要**。
+//   moddev-gradle 是 NeoForge 26.x 官方支持的构建方式(它读 `neoforge-<ver>-moddev-config.json`
+//   装配 MC + NeoForge 的编译 classpath), 实测在本机 Gradle 9.6.1 + JDK 25 下 BUILD SUCCESSFUL。
+// ==================================================================================
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev' version '2.0.147'
 }
 
-configurations.all {
-    resolutionStrategy.eachDependency { details ->
-        // 本地仓库有 11.0.4 但 loader 要求 11.0.3，强制用 11.0.4
-        if (details.requested.group == 'cpw.mods' && details.requested.name == 'modlauncher') {
-            details.useVersion '11.0.4'
-        }
-        // 本地仓库有 3.0.8 但 loader 要求 3.0.7，强制用 3.0.8
-        if (details.requested.group == 'cpw.mods' && details.requested.name == 'securejarhandler') {
-            details.useVersion '3.0.8'
-        }
-    }
+neoForge {
+    // NeoForge 版本 (26.2 的正式版线; 见 REPORT §1 的坐标表)
+    version = rootProject.neoforgeVersion
 }
 
-// 2026-09-24 死代码清理: 这里原有 architectury { platformSetupLoomIde(); neoForge { platformPackage = "forge" } }。
-//   `platformPackage` 只服务 Architectury 的 @ExpectPlatform 代码生成, 而本项目**零处使用** @ExpectPlatform
-//   (平台实现是各模块直接 implements + 入口显式构造注入); `platformSetupLoomIde()` 只影响 IDE/run-config。
-//   实测移除后 :common:test / :neoforge:build 均通过。
 dependencies {
-    modImplementation "net.neoforged:neoforge:${rootProject.neoforgeVersion}"
-
-    // 显式添加 FancyModLoader 和 Bus（NeoForge 的传递依赖，但 NeoForge Maven 被墙无法自动解析）
-    implementation "net.neoforged.fancymodloader:loader:4.0.31"
-    implementation "net.neoforged.fancymodloader:earlydisplay:4.0.31"
-    implementation "net.neoforged:bus:8.0.2"
-
-    // 2026-09-24 死代码清理: 删掉 architectury-neoforge 依赖 —— 全仓库 Java 里 "architectury" 只出现在注释中,
-    //   @ExpectPlatform 0 处, neoforge 编译产物里 0 个类引用它。**注意它同时是 neoforge.mods.toml 里
-    //   type="required" 的依赖**, 也就是说玩家被强制安装一个本模组完全用不到的 Architectury API ——
-    //   那条声明也已一并删除(见 META-INF/neoforge.mods.toml)。
-
-    // Mixin 注解
-    // 2026-09-24 死代码盘点: mixinextras **完全未使用** (全仓库 0 处 WrapOperation/
-    //   ModifyExpressionValue/WrapWithCondition/ModifyReturnValue/@Local/@Share/llamalad7),
-    //   实际用到的全是 Sponge 原生注解; 实测删除后 :neoforge:build 仍 BUILD SUCCESSFUL。
-
-    // SpongePowered Mixin（NeoForge 自带但需要显式引入编译路径）
-    implementation "net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"
-
-    // common 模块源码由下面 sourceSets.srcDir 直接引入并随本模块一起编译,
-    // 因此**不能**再写 `implementation project(':common')` —— 那会把 :common:remapJar
-    // 拖进构建图, 而 common 关掉了 jar (jar.enabled=false), 该任务必然失败,
-    // 导致整个 :neoforge:build 崩掉 (2026-09-20 实测: 唯一失败任务就是它)。
-
-    // 2026-08-01: neoforge 用 MC 1.21.1 + mojang official
-    minecraft "com.mojang:minecraft:${rootProject.minecraftVersion}"
-    mappings loom.officialMojangMappings()
+    // SpongePowered Mixin 注解(@Mixin/@Inject/@Shadow/@Accessor/@Invoker)。
+    // 版本必须与 NeoForge 26.2.0.88 的 pom 一致(它自己依赖 sponge-mixin 0.17.3+mixin.0.8.7)。
+    compileOnly "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7"
 }
 
-loom {
-    // 2026-08-01: 显式使用 Mojang official mappings
-    officialMojangMappings()
-
-    mixin {
-        defaultRefmapName = "chunkpilot.refmap.json"
-    }
-
-    runs {
-        server {
-            server()
-        }
-        client {
-            client()
-        }
-    }
-}
-
+// 引用 common 源码 (不依赖 common 项目 —— common 关掉了 jar, 走 project 依赖会让构建图里
+// 出现一个必然失败的 :common:jar)
 sourceSets {
     main {
         java {
@@ -79,66 +43,45 @@ sourceSets {
     }
 }
 
-// NeoForge 1.21.1 runtime 使用 Mojang 命名 class,而 loom 默认输出 intermediary 命名 remapJar
-// 会导致 NoClassDefFoundError (例如 class_2561 Component)。
-// 解决方案: 禁用 remapJar + 后处理 refmap 为 Mojang 命名
-tasks.named('remapJar').configure { enabled = false }
-
-// 写一个 fixRefmap 任务, 把 jar 里的 refmap 替换成 Mojang 命名
-tasks.register('fixRefmap') {
-    doLast {
-        def jarFile = file("$buildDir/devlibs/neoforge-${version}-dev.jar")
-        if (!jarFile.exists()) {
-            println "Jar not found: $jarFile"
-            return
-        }
-        def tmpDir = file("$buildDir/tmp/fixrefmap")
-        tmpDir.mkdirs()
-        ant.unjar(src: jarFile, dest: tmpDir)
-        
-        // 写新的 Mojang 命名 refmap
-        def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
-        refmapFile.text = '''{
-  "mappings": {
-    "com/chunkpilot/neoforge/mixin/ChunkMapMixin": {
-      "updatePlayerPos": "Lnet/minecraft/server/level/ChunkMap;updatePlayerPos(Lnet/minecraft/server/level/ServerPlayer;)V",
-      "move": "Lnet/minecraft/server/level/ChunkMap;move(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderMixin": {
-      "collectChunksToSend": "Lnet/minecraft/server/network/PlayerChunkSender;collectChunksToSend(Lnet/minecraft/server/level/ChunkMap;Lnet/minecraft/world/level/ChunkPos;)Ljava/util/List;"
-    },
-    "com/chunkpilot/neoforge/mixin/PlayerChunkSenderSendMixin": {
-      "sendNextChunks": "Lnet/minecraft/server/network/PlayerChunkSender;sendNextChunks(Lnet/minecraft/server/level/ServerPlayer;)V"
-    },
-    "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
-      "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
-    }
-  }
-}
-'''
-        // 重打包
-        ant.delete(file: jarFile)
-        ant.zip(destfile: jarFile, basedir: tmpDir)
-        println "Fixed refmap in $jarFile"
-    }
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
-// 让 jar 任务依赖 fixRefmap, 确保 build 后 refmap 是 Mojang 命名
-afterEvaluate {
-    tasks.named('jar').configure { finalizedBy('fixRefmap') }
-}
-// 2026-09-24: 元数据里的 MC 版本区间改为构建期从 rootProject.minecraftVersion 计算, 不再手写。
+// 元数据里的 MC 版本区间与 mod 版本改为构建期展开, 不再手写
 //   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
-//   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的 1.21.x 上也"允许加载",
+//   ② 写得过宽(如 [1.21.1,1.22)) ⇒ jar 被装到别的版本上也"允许加载",
 //      然后以 mixin 目标缺失的形式崩在启动期, 比明确拒绝更难排查。
 def _mc = project.property('minecraftVersion').toString()
 def _mcParts = _mc.tokenize('.')
 def _mcNext = (_mcParts[0..-2] + [(_mcParts[-1] as int) + 1]).join('.')
 def mcRange = "[${_mc},${_mcNext})"
 
+def modVer = project.property('modVersion').toString()
+
 processResources {
     inputs.property "mcRange", mcRange
+    inputs.property "modVersion", modVer
     filesMatching("META-INF/neoforge.mods.toml") {
-        expand(mcRange: mcRange)
+        expand(mcRange: mcRange, modVersion: modVer)
     }
 }
+
+// 交付约定: 产物固定出现在 `neoforge/build/devlibs/neoforge-<modVersion>-dev.jar`
+//   (工程其它版本的交付脚本都按这个路径取 neoforge 产物; 1.21.x 时代该路径来自
+//    "remapJar 被禁用 ⇒ dev jar 落在 devlibs"。26.x 没有 remapJar, 所以这里显式镜像一份,
+//    保证"取产物"的约定不变。)
+tasks.register('devlibsJar', Copy) {
+    dependsOn tasks.named('jar')
+    from tasks.named('jar').flatMap { it.archiveFile }
+    into layout.buildDirectory.dir('devlibs')
+    rename { "neoforge-${modVer}-dev.jar" }
+}
+
+tasks.named('assemble') { finalizedBy 'devlibsJar' }
+
+// 兼容主代理的标准构建命令里的 `-x remapSourcesJar`:
+//   26.x 的不重映射构建**没有** remapSourcesJar/remapJar 任务(那是重映射 loom 才有的)。
+//   这里注册同名空任务, 使 `-x remapSourcesJar` 在任何情况下都不会因"任务不存在"而失败。
+tasks.register('remapSourcesJar') { group = 'loom'; description = 'no-op on unobfuscated MC 26.x' }
+tasks.register('remapJar') { group = 'loom'; description = 'no-op on unobfuscated MC 26.x' }

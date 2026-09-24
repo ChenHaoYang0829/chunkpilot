@@ -5,7 +5,7 @@ issueTrackerURL = ""
 
 [[mods]]
 modId = "chunkpilot"
-version = "0.5.0-alpha"
+version = "${modVersion}"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''
@@ -15,7 +15,7 @@ Smart chunk loading and rendering optimization for high-speed travel (elytra, tr
 [[dependencies.chunkpilot]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1,)"
+versionRange = "[26.2,)"
 ordering = "NONE"
 side = "BOTH"
 
@@ -30,6 +30,3 @@ side = "BOTH"
 # 本模组代码零处使用 Architectury (无 @ExpectPlatform, 编译产物零引用), 那条声明只会逼玩家多装一个没用的 mod。
 [[mixins]]
 config = "chunkpilot.mixins.json"
-
-[[mixins]]
-config = "chunkpilot.client.mixins.json"

@@ -4,10 +4,11 @@ buildscript {
     }
 }
 
-plugins {
-    id 'dev.architectury.loom' version '1.13.469' apply false
-    id 'architectury-plugin' version '3.5.169' apply false
-}
+// 2026-09-24 (port/26.2): 这里原本声明 dev.architectury.loom / architectury-plugin。
+//   MC 26.x 起官方 jar 不再混淆, **没有 mappings 可解析** ⇒ remap 版 loom 在配置期必然失败
+//   ("Failed to find official mojang mappings for 26.2")。现在: fabric 用官方
+//   `net.fabricmc.fabric-loom`(不重映射变体), neoforge 用官方 `net.neoforged.moddev`,
+//   common 不需要 loom ⇒ 本工程**不再使用 architectury-loom**。
 
 ext {
     // 版本常量
@@ -32,13 +33,9 @@ ext {
 
 subprojects {
     apply plugin: 'java'
-    // 2026-08-01: fabric 用官方 fabric-loom-remap, 不用 architectury loom/plugin
-    if (project.name != 'fabric') {
-        apply plugin: 'dev.architectury.loom'
-        // 2026-09-24: 不再应用 'architectury-plugin' —— 它只服务 @ExpectPlatform 代码生成与本项目零使用的
-        //   platformPackage 设置; 实测 :common:test / :neoforge:build 在移除后仍通过。
-        //   (dev.architectury.loom 仍保留: 它是 common/neoforge 实际使用的 loom 实现。)
-    }
+    // 2026-09-24 (port/26.2): 不再给 common/neoforge 应用 architectury-loom ——
+    //   fabric 模块自带 net.fabricmc.fabric-loom(不重映射), neoforge 模块自带 net.neoforged.moddev,
+    //   common 零 MC 引用(纯 java)。
 
     java {
         toolchain {
@@ -46,11 +43,6 @@ subprojects {
         }
     }
 
-    if (project.name != 'fabric') {
-        loom {
-            silentMojangMappingsLicense()
-        }
-    }
 
     // 2026-08-01: minecraft dependency 由各子项目自己设 (fabric 1.21.2, neoforge 1.21.1 不同)
     // 不在这里注入, 各子项目 build.gradle 自己声明

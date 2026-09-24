@@ -1,6 +1,8 @@
 pluginManagement {
     repositories {
         maven { url "https://maven.fabricmc.net/" }
+        // 2026-09-24 (port/26.2): neoforge 模块改用官方 net.neoforged.moddev 插件
+        maven { url "https://maven.neoforged.net/releases" }
         maven { url "https://maven.architectury.dev/" }
         maven { url "https://repo.papermc.io/repository/maven-public/" }
         maven { url "https://maven.minecraftforge.net/" }
