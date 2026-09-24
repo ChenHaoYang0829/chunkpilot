@@ -16,7 +16,6 @@ public class ChunkPilotConfig {
 
     // ===== [general] 全局 =====
     public boolean enabled = true;
-    public String mode = "sector"; // none | sector | aggressive
     public String logLevel = "info";
     /**
      * 输出语言 (i18n). "auto" = 玩家消息跟随其客户端语言, 控制台/日志用 en_us;
@@ -38,7 +37,6 @@ public class ChunkPilotConfig {
     // ===== [protection] 保护机制 =====
     public int maxMspt = 40;
     public int disableMspt = 50;
-    public int ticketExpiryTicks = 100; // 5 秒 grace period
 
     /**
      * v0.11.6 非阻塞碰撞查询 (治"墙"/"停摆"/"无 C2ME 崩"的根因).

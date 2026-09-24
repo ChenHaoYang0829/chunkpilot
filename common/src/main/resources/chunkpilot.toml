@@ -35,7 +35,6 @@
 
 [general]
 enabled = true
-mode = "sector"
 logLevel = "info"
 # 输出语言: "auto" = 玩家消息跟随其客户端语言, 控制台/日志用 en_us; 也可写死 "zh_cn" / "en_us".
 language = "auto"
@@ -97,7 +96,6 @@ tailRadius = 1
 [protection]
 maxMspt = 40
 disableMspt = 50
-ticketExpiryTicks = 100
 # v0.10: 扇形 ticket 硬上限提到 100 (给自适应档位留空间); 每 tick 新增限 4 (压 worldgen 灌量)
 maxSectorTickets = 100
 maxNewTicketsPerTick = 2
@@ -240,8 +238,6 @@ enabled = false              # v0.7.0: 默认关闭 (1.21.3 ChunkDataSender.make
 v_min = 0.7
 k = 1.0                      # 距离衰减
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (当前仅展示, 不参与计算)
-v_boost_beta = 0.5           # v0.7.0: 速度加成 (当前仅展示, 不参与计算)
 
 # ===== 前瞻窗口 Forward Look-ahead Window (v0.11.6) =====
 # 原版给玩家的是**以玩家为中心**的对称窗口 ([p-vd, p+vd]): 高速前进时, 前方 vd 区块处的区块

@@ -184,7 +184,6 @@ public class ConfigLoader {
                 case "general" -> {
                     switch (key) {
                         case "enabled" -> cfg.enabled = parseBool(value);
-                        case "mode" -> cfg.mode = value;
                         case "logLevel" -> cfg.logLevel = value;
                         case "language" -> cfg.language = value;
                     }
@@ -205,7 +204,6 @@ public class ConfigLoader {
                     switch (key) {
                         case "maxMspt" -> cfg.maxMspt = parseInt(value);
                         case "disableMspt" -> cfg.disableMspt = parseInt(value);
-                        case "ticketExpiryTicks" -> cfg.ticketExpiryTicks = parseInt(value);
                         case "nonBlockingCollision" -> cfg.nonBlockingCollision = parseBool(value);
                         case "nonBlockingReads" -> cfg.nonBlockingReads = parseBool(value);
                         case "nonBlockingGetChunk" -> cfg.nonBlockingGetChunk = parseBool(value);
@@ -263,8 +261,6 @@ public class ConfigLoader {
                         case "v_min" -> cfg.chunkSend.v_min = parseDouble(value);
                         case "k" -> cfg.chunkSend.k = parseDouble(value);
                         case "lookAheadSeconds" -> cfg.chunkSend.lookAheadSeconds = parseDouble(value);
-                        case "direction_gamma" -> cfg.chunkSend.direction_gamma = parseDouble(value);
-                        case "v_boost_beta" -> cfg.chunkSend.v_boost_beta = parseDouble(value);
                     }
                 }
                 case "forward_window" -> {
