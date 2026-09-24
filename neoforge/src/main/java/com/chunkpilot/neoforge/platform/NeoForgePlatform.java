@@ -133,6 +133,152 @@ public class NeoForgePlatform implements PlatformAbstraction {
         return new int[]{pos.x, pos.z};
     }
 
+    // ===================== port/1.21.8: 补齐探针与"已加载"判定 =====================
+    // main 的 63b6f8c 记录过这个缺口: "NeoForgePlatform 未覆写 isChunkLoaded(默认 false)/
+    // isChunkReadyFull/probeChunk/getOverworldId ⇒ '跳过已加载'优化在 neoforge 失效、probe 无输出"。
+    // 后果很实际: bench 的 own_loaded_srv / lead_loaded_srv 两列在 neoforge 上恒 0.00,
+    // 而这两列是**独立判定"CP 是否真的生效"的唯一行为证据** ⇒ 主代理无法验收 neoforge 侧。
+    // 这里按 FabricPlatform 的同口径实现补齐 (1.21.8 的 API 两边一致:
+    //   ServerChunkCache.hasChunk(int,int) / private getVisibleChunkIfPresent(long) / ChunkHolder.getTicketLevel()),
+    // 差别只在取 private 入口的方式: fabric 用 @Invoker mixin, neoforge 这里用反射 (运行期是 Mojang 名)。
+
+    /** 缓存 ServerChunkCache.getVisibleChunkIfPresent(long) (private, 运行期 Mojang 名可直接按名找)。 */
+    private static java.lang.reflect.Method visibleChunkMethod = null;
+    private static boolean visibleChunkResolved = false;
+
+    private static net.minecraft.server.level.ChunkHolder chunkpilot$holder(ServerLevel level, long posLong) {
+        try {
+            if (!visibleChunkResolved) {
+                visibleChunkResolved = true;
+                try {
+                    java.lang.reflect.Method m = net.minecraft.server.level.ServerChunkCache.class
+                        .getDeclaredMethod("getVisibleChunkIfPresent", long.class);
+                    m.setAccessible(true);
+                    visibleChunkMethod = m;
+                } catch (Throwable t) {
+                    LOG.warn("[ChunkPilot] 找不到 ServerChunkCache.getVisibleChunkIfPresent: {}", t.toString());
+                }
+            }
+            if (visibleChunkMethod == null) return null;
+            Object h = visibleChunkMethod.invoke(level.getChunkSource(), posLong);
+            return (net.minecraft.server.level.ChunkHolder) h;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    @Override
+    public int getOverworldId() {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return 0;
+            return server.overworld().hashCode();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    @Override
+    public boolean isChunkLoaded(int worldId, int chunkX, int chunkZ) {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return false;
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return false;
+            // ServerChunkCache.hasChunk(int,int) = "ChunkHolder 存在且票等级 <= FULL(33)"
+            return level.getChunkSource().hasChunk(chunkX, chunkZ);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 真正的"已生成到 FULL"(非阻塞): holder + fullChunkFuture.isDone()。 */
+    @Override
+    public boolean isChunkReadyFull(int worldId, int chunkX, int chunkZ) {
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return false;
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return false;
+            net.minecraft.server.level.ChunkHolder holder =
+                chunkpilot$holder(level, ChunkPos.asLong(chunkX, chunkZ));
+            if (holder == null) return false;
+            java.util.concurrent.CompletableFuture<net.minecraft.server.level.ChunkResult<
+                net.minecraft.world.level.chunk.LevelChunk>> fut = holder.getFullChunkFuture();
+            if (!fut.isDone()) return false;
+            net.minecraft.server.level.ChunkResult<net.minecraft.world.level.chunk.LevelChunk> r = fut.getNow(null);
+            return r != null && r.isSuccess() && r.orElse(null) != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    @Override
+    public String probeChunk(int worldId, int chunkX, int chunkZ) {
+        return probeChunk(worldId, chunkX, chunkZ, null);
+    }
+
+    /** 只读探针 (绝不加载区块) —— 与 FabricPlatform 同口径, 供 `/chunkpilot probe` 与 bench 的
+     *  own_loaded_srv / lead_loaded_srv 采样使用。 */
+    @Override
+    public String probeChunk(int worldId, int chunkX, int chunkZ, java.util.UUID viewerId) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return com.chunkpilot.i18n.I18n.trFor(viewerId,
+                "chunkpilot.probe.server_not_bound");
+            ServerLevel level = findWorld(server, worldId);
+            if (level == null) return com.chunkpilot.i18n.I18n.trFor(viewerId,
+                "chunkpilot.probe.world_not_found", worldId);
+
+            long posLong = ChunkPos.asLong(chunkX, chunkZ);
+            boolean loaded = isChunkLoaded(worldId, chunkX, chunkZ);
+            int ticketLevel = -1;
+            boolean holderPresent = false;
+            String statusName = "?";
+            net.minecraft.server.level.ChunkHolder holder = chunkpilot$holder(level, posLong);
+            if (holder != null) {
+                holderPresent = true;
+                ticketLevel = holder.getTicketLevel();   // 直接调用 (运行期 Mojang 名, 无需反射)
+                statusName = chunkLevelTypeName(ticketLevel);
+            }
+
+            int pcx = 0, pcz = 0;
+            double best = -1;
+            for (var sp : server.getPlayerList().getPlayers()) {
+                if (sp.level() != level) continue;
+                int cx = sp.chunkPosition().x, cz = sp.chunkPosition().z;
+                double d = Math.hypot(chunkX - cx, chunkZ - cz);
+                if (best < 0 || d < best) { best = d; pcx = cx; pcz = cz; }
+            }
+
+            boolean fullReady = isChunkReadyFull(worldId, chunkX, chunkZ);
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.line",
+                chunkX, chunkZ, chunkX << 4, chunkZ << 4, loaded, holderPresent,
+                ticketLevel, fullReady, statusName));
+            if (best >= 0) {
+                sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.nearest",
+                    pcx, pcz, best));
+            }
+            sb.append(com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.view",
+                getServerRenderDistance()));
+        } catch (Throwable t) {
+            return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.probe.failed",
+                String.valueOf(t));
+        }
+        return sb.toString();
+    }
+
+    /** 票等级 → 人类可读的加载类型 (与 FabricPlatform 同名同义)。 */
+    private static String chunkLevelTypeName(int level) {
+        if (level < 0) return "unknown";
+        if (level <= 31) return "ENTITY_TICKING";
+        if (level == 32) return "BLOCK_TICKING";
+        if (level == 33) return "FULL";
+        if (level < 44) return "BORDER(部分生成)";
+        return "UNLOADED";
+    }
+
     @Override
     public double getPlayerDirection(UUID playerId) {
         return 0;
