@@ -28,6 +28,60 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
+    // ==================================================================================
+    // v0.11.6 (neoforge 平台补齐, B3 专项): CP 生成集合
+    //
+    // 为什么必须有: 本次新增的 `ChunkMapGenerationMixin` 要靠这两个集合判断"哪些 chunk 是 CP 自己要的",
+    // 才能只对它们提投递优先级。fabric 侧由 `FabricPlatform` 的同名静态集合提供; neoforge 侧此前
+    // **一个都没有** ⇒ 即便移植了 mixin, `exclusiveGenerationNoC2me` 也会永远判定"不是 CP 的 chunk"。
+    //
+    // 语义与 FabricPlatform 逐条一致 (main 作业书 §3.1 "语义等价优先"):
+    //   requestedChunks  —— 本 tick CP 生成器请求的 chunk, 每 tick 开头清空 (ChunkPilotNeoForge.onServerTick);
+    //   ticketedChunks   —— 跨 tick 持久的"有活跃 CP 票"的 chunk, 由 add/removeChunkTicket 维护,
+    //                       并定期用真实活跃票集合重建 (rebuildCpTicketMarks), 防只增不减的泄漏。
+    // ==================================================================================
+    private static final java.util.Set<Long> requestedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<Long> ticketedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 标记某 chunk 为 CP 想生成的 (由 requestChunkAsync / 每 tick 玩家脚下安全网调用). */
+    public static void markChunkRequested(long chunkPosLong) {
+        requestedChunks.add(chunkPosLong);
+    }
+
+    /** 查询某 chunk 是否被 CP 请求生成 (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkRequestedByCp(long chunkPosLong) {
+        return requestedChunks.contains(chunkPosLong);
+    }
+
+    /** 清空本 tick 的 CP 请求集合 (每 tick 开头由 ChunkPilotNeoForge.onServerTick 调用). */
+    public static void clearRequestedChunks() {
+        requestedChunks.clear();
+    }
+
+    /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkTicketedByCp(long chunkPosLong) {
+        return ticketedChunks.contains(chunkPosLong);
+    }
+
+    private static void markChunkTicketed(long chunkPosLong) {
+        ticketedChunks.add(chunkPosLong);
+    }
+
+    private static void unmarkChunkTicketed(long chunkPosLong) {
+        ticketedChunks.remove(chunkPosLong);
+    }
+
+    /** v0.11.4: 用真实活跃票集合重建标记集合 (只增不减会留下永久残留). */
+    @Override
+    public void rebuildCpTicketMarks(java.util.Collection<Long> activeChunkPositions) {
+        ticketedChunks.clear();
+        if (activeChunkPositions != null && !activeChunkPositions.isEmpty()) {
+            ticketedChunks.addAll(activeChunkPositions);
+        }
+    }
+
     // ========== port/1.21.10: TicketType / ticket 投递 API 变了 (与 fabric 侧同步) ==========
     //
     // javap 实证 (1.21.10 Mojang official):
@@ -223,6 +277,38 @@ public class NeoForgePlatform implements PlatformAbstraction {
         }
     }
 
+    /**
+     * 取"可见表里的 ChunkHolder"。
+     *
+     * ============================ v0.11.6 (B3 专项) 的修法 ============================
+     * 原来只走 `chunkpilot$invokeByName("getVisibleChunkIfPresent")` (getDeclaredMethod + setAccessible)。
+     * **实测该反射在本版本上失败**: `artifacts/1.21.10/bench/1.21.10_nf_cp1|nf_cp2` 的 mspt.csv
+     * 巡航期 `own_ticket_level` / `lead_ticket_level` 78/78 个样本**全部是 -1.0**
+     * (= 探针里 holder 取不到 ⇒ 走默认值), 而同期 `own_loaded_srv`=1.0 / `lead_loaded_srv`=0.95~1.0。
+     *
+     * 现在优先走**本模块新增的 mixin accessor** `ServerChunkCacheAccessor.chunkpilot$getVisibleChunkIfPresent`
+     * —— 它在字节码层直接调用目标方法, **完全绕开 setAccessible 与 NeoForge 的具名 module 层**:
+     *   1. 先判 `instanceof` (而不是强转): accessor mixin 若因任何原因没应用, 这里只是 `false`,
+     *      不会抛 ClassCastException;
+     *   2. 原反射作为**第二兜底**保留 (语义与原实现完全一致), 两条路都失败才返回 null。
+     *
+     * 只影响**探针显示** (ticketLevel / levelType), 不参与任何决策逻辑 ——
+     * 判 CP 是否生效仍看 `loaded=` 那一列 (作业书明示)。
+     */
+    private static Object chunkpilot$visibleHolder(ServerLevel level, long posLong) {
+        try {
+            Object source = level.getChunkSource();
+            if (source instanceof com.chunkpilot.neoforge.mixin.ServerChunkCacheAccessor acc) {
+                Object holder = acc.chunkpilot$getVisibleChunkIfPresent(posLong);
+                if (holder != null) return holder;
+            }
+        } catch (Throwable ignored) {
+            // accessor 不可用时继续走反射兜底
+        }
+        return chunkpilot$invokeByName(level.getChunkSource(), "getVisibleChunkIfPresent",
+            new Class<?>[]{long.class}, new Object[]{posLong});
+    }
+
     @Override
     public int getOverworldId() {
         try {
@@ -286,8 +372,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             boolean holderPresent = false;
             String statusName = "?";
             try {
-                Object holder = chunkpilot$invokeByName(level.getChunkSource(), "getVisibleChunkIfPresent",
-                    new Class<?>[]{long.class}, new Object[]{posLong});
+                Object holder = chunkpilot$visibleHolder(level, posLong);
                 if (holder != null) {
                     holderPresent = true;
                     Object tl = chunkpilot$invokeByName(holder, "getTicketLevel", new Class<?>[0], new Object[0]);
@@ -350,6 +435,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
         // port/1.21.10: DistanceManager.addTicket → ServerChunkCache.addTicket(new Ticket(type, level), pos)
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         world.getChunkSource().addTicket(new net.minecraft.server.level.Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
+        // v0.10.4 (neoforge 补齐): 标记该 chunk 有活跃 CP ticket, 让 ChunkMapGenerationMixin
+        //   放行其生成 (不误取消 sector 生成). 与 FabricPlatform.addChunkTicket 同语义.
+        markChunkTicketed(pos.toLong());
         return true;
     }
 
@@ -362,6 +450,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         chunkpilot$removeTicket(world, CHUNKPILOT_TICKET, pos, ticketLevel);
+        // 与 addChunkTicket 对称: 取消该 chunk 的 CP ticket 标记
+        unmarkChunkTicketed(pos.toLong());
         return true;
     }
 
@@ -396,6 +486,11 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
             ServerLevel level = findWorld(server, worldId);
             if (level == null) return false;
+
+            // v0.9.0 (neoforge 补齐): 标记该 chunk 为 CP 想生成的.
+            //   ChunkMapGenerationMixin 在 runGenerationTask 里查这个集合, 只对 CP 自己的
+            //   chunk 提投递优先级 (绝不丢任务). 与 FabricPlatform.requestChunkAsync 同语义.
+            markChunkRequested(ChunkPos.asLong(chunkX, chunkZ));
 
             // 检测 C2ME
             if (isC2MEPresent()) {
