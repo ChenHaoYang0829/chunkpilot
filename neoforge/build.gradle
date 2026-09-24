@@ -100,6 +100,11 @@ tasks.register('fixRefmap') {
             return
         }
         def tmpDir = file("$buildDir/tmp/fixrefmap")
+        // 2026-09-24 产物卫生: 必须先清空暂存目录再解包。ant.unjar 只覆盖不删除 ——
+        //   若上次构建留下的 class 在新 jar 里已经不存在 (源码被删了), 它们会被原样重新打进 jar。
+        //   实测: 1.0.0 删除客户端渲染链路后, 未清空时 neoforge-1.0.0-dev.jar 里**仍带着**
+        //   ChunkPilotClient/ClientRenderConfig/客户端 Mixin 等已删除的 class 和 chunkpilot.client.mixins.json。
+        tmpDir.deleteDir()
         tmpDir.mkdirs()
         ant.unjar(src: jarFile, dest: tmpDir)
         
