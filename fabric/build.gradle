@@ -4,7 +4,7 @@ plugins {
 }
 version = rootProject.modVersion
 group = rootProject.modGroup
-def fabMC = "26.1"
+def fabMC = "26.1.1"
 def fabLoader = "0.19.5"
 def fabApi = "0.155.3+26.1.2"
 repositories {
@@ -77,6 +77,7 @@ dependencies {
 //   手写极容易漏改(实测出现过"1.21.5 的 jar 里写着 minecraft=1.21.3"⇒ 在 1.21.5 上被 loader 直接拒绝加载)。
 processResources {
     inputs.property "mcVersion", fabMC
+    inputs.property "modVersion", rootProject.modVersion
     inputs.property "modVersion", rootProject.modVersion
     filesMatching("fabric.mod.json") {
         expand(mcVersion: fabMC, modVersion: rootProject.modVersion)
