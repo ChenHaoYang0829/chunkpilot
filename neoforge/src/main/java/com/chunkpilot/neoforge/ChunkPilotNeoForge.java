@@ -301,6 +301,20 @@ public class ChunkPilotNeoForge {
                 .then(Commands.literal("help")
                     .requires(src -> src.hasPermission(0))
                     .executes(ctx -> runMain(ctx, new String[]{"help"})))
+                // ===== 1.20.1 移植新增: /chunkpilot tickstats =====
+                // 1.20.1 **没有 /tick 命令** (javap 实证: 1.20.1 的 server jar 里没有 TickCommand),
+                // 所以 forge/neoforge 侧同样拿不到 MSPT (bench 的 A 指标整列会是 None)。
+                // 这里给出与 /tick query **同格式**的输出, bench_run 的采样器会自动回退到它
+                // (实现与 fabric 侧 ServerInitializer 逐行一致)。
+                .then(Commands.literal("tickstats")
+                    .requires(src -> src.hasPermission(0))
+                    .executes(ctx -> {
+                        for (String line : tickStatsLines(ctx.getSource().getServer())) {
+                            ctx.getSource().sendSystemMessage(
+                                net.minecraft.network.chat.Component.literal(line));
+                        }
+                        return 1;
+                    }))
         );
 
         LOGGER.info("ChunkPilot: /chunkpilot command registered (with subcommands)");
@@ -325,5 +339,43 @@ public class ChunkPilotNeoForge {
                 net.minecraft.network.chat.Component.literal(line));
         }
         return 1;
+    }
+
+    /**
+     * 用 1.20.1 可用的 `MinecraftServer.tickTimes` (public final long[], 纳秒) +
+     * `getAverageTickTime()` (public float, 毫秒) 生成与 1.21.x `/tick query` 同格式的文本。
+     * 采样器正则: `Average time per tick:\s*([\d.]+)ms` / `P50:` / `P95:` / `P99:` / `sample:`。
+     */
+    private static java.util.List<String> tickStatsLines(MinecraftServer server) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        long[] times = server.tickTimes;
+        int n = 0;
+        long[] copy = new long[times.length];
+        for (long t : times) {
+            if (t > 0) copy[n++] = t;
+        }
+        copy = java.util.Arrays.copyOf(copy, n);
+        java.util.Arrays.sort(copy);
+        double avg = server.getAverageTickTime();
+        out.add(String.format(java.util.Locale.ROOT,
+            "Target tick rate: 20.0 per second"));
+        out.add(String.format(java.util.Locale.ROOT,
+            "Average time per tick: %.3fms (Target: 50.000ms; %.1f%% of tick)",
+            avg, avg / 50.0 * 100.0));
+        double p50 = pct(copy, 0.50), p95 = pct(copy, 0.95), p99 = pct(copy, 0.99);
+        out.add(String.format(java.util.Locale.ROOT,
+            "Percentiles: P50: %.3fms P95: %.3fms P99: %.3fms", p50, p95, p99));
+        long over50 = 0;
+        for (long t : copy) if (t > 50_000_000L) over50++;
+        double max = copy.length == 0 ? 0 : copy[copy.length - 1] / 1e6;
+        out.add(String.format(java.util.Locale.ROOT,
+            "sample: %d ticks, max: %.3fms, over50ms: %d", copy.length, max, over50));
+        return out;
+    }
+
+    private static double pct(long[] sorted, double q) {
+        if (sorted.length == 0) return 0;
+        int i = (int) Math.floor(q * (sorted.length - 1));
+        return sorted[Math.max(0, Math.min(sorted.length - 1, i))] / 1e6;
     }
 }
