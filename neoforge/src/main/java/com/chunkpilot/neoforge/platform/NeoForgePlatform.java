@@ -28,13 +28,51 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
-    // ChunkPilot 自定义 ticket 类型（level 31 = FULL_TICKING）
-    public static final TicketType<ChunkPos> CHUNKPILOT_TICKET =
-        TicketType.create("chunkpilot:forced", Comparator.comparingLong(ChunkPos::toLong), 31);
+    // ========== port/1.21.6: TicketType / ticket 投递 API 变了 (与 fabric 侧同步) ==========
+    //
+    // javap 实证 (1.21.6 Mojang official):
+    //   TicketType 变成 record (long timeout, boolean persist, TicketType$TicketUse use),
+    //   `TicketType.create(...)` 与 1.21.10 那套 (timeout,int flags)+FLAG_* 常量都**不存在**;
+    //   等级封装进 `new Ticket(TicketType, int level)`;
+    //   DistanceManager.addTicket/removeTicket/addRegionTicket 已移除 (挪进
+    //   net.minecraft.world.level.TicketStorage);
+    //   ServerChunkCache 只保留 public addTicket(Ticket, ChunkPos) /
+    //   addTicketWithRadius / removeTicketWithRadius (radius 语义, 不适用显式等级票据).
+    //
+    // 取 TicketStorage 用**公开 API**: ServerLevel.getDataStorage()(public) →
+    //   DimensionDataStorage.computeIfAbsent(TicketStorage.TYPE) —— javap 实证 ServerChunkCache.<init>
+    //   就是这么拿的 (同一个 SavedData 缓存实例), 因此不需要反射、也不需要新 mixin accessor。
+    // persist=false ⇒ TicketStorage 序列化时先判 TicketType.persist() (packTickets 的 lambda
+    //   method_67396 里 ifeq 跳过) ⇒ 自定义 TicketType 不进 BuiltInRegistries 也绝不会在存档时失败。
+    //   use=TicketUse.LOADING = 只加载不 tick = 旧版 level 33 的语义。
+    public static final TicketType CHUNKPILOT_TICKET =
+        new TicketType(31L, false, TicketType.TicketUse.LOADING);
 
-    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成)
-    public static final TicketType<ChunkPos> CHUNKPILOT_GEN_TICKET =
-        TicketType.create("chunkpilot:gen", Comparator.comparingLong(ChunkPos::toLong), 31);
+    // v0.3.0 生成请求用的临时 ticket (低优先级, 仅触发异步生成), 200 ticks 过期.
+    public static final TicketType CHUNKPILOT_GEN_TICKET =
+        new TicketType(200L, false, TicketType.TicketUse.LOADING);
+
+    /** port/1.21.6: 预生成票据等级 = 33 (FULL, 不参与 block/entity tick), 与 fabric 侧一致. */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
+    /** port/1.21.6: 本维度的 TicketStorage (与 ServerChunkCache 持有的同一实例, 走公开 API). */
+    private static net.minecraft.world.level.TicketStorage chunkpilot$ticketStorage(ServerLevel world) {
+        return world.getDataStorage().computeIfAbsent(net.minecraft.world.level.TicketStorage.TYPE);
+    }
+
+    private static boolean chunkpilot$removeTicket(ServerLevel world, TicketType type, ChunkPos pos, int level) {
+        try {
+            // ServerChunkCache 没有 public removeTicket(Ticket, ChunkPos) (只有半径语义的
+            // removeTicketWithRadius), 所以直接用 TicketStorage 的 public removeTicket(Ticket, ChunkPos)
+            // (javap 实证: 内部按 isTicketSameTypeAndLevel 匹配 = type 引用相等 && level 相等).
+            chunkpilot$ticketStorage(world)
+                .removeTicket(new net.minecraft.server.level.Ticket(type, level), pos);
+            return true;
+        } catch (Throwable t) {
+            LOG.debug("[ChunkPilot] removeTicket failed: {}", t.toString());
+            return false;
+        }
+    }
 
     // C2ME 兼容: 检测 C2ME 是否加载
     private Boolean c2meCached = null;
@@ -115,10 +153,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
         ServerLevel world = findWorld(server, worldId);
         if (world == null) return false;
 
-        // v0.10: 改用 addTicket (单区块) 直接指定加载等级, 支持远处浅层加载.
+        // v0.10: 直接指定加载等级, 支持远处浅层加载.
+        // port/1.21.10: DistanceManager.addTicket → ServerChunkCache.addTicket(new Ticket(type, level), pos)
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .addTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        world.getChunkSource().addTicket(new net.minecraft.server.level.Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
         return true;
     }
 
@@ -130,8 +168,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
         if (world == null) return false;
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-        world.getChunkSource().chunkMap.getDistanceManager()
-            .removeTicket(CHUNKPILOT_TICKET, pos, ticketLevel, pos);
+        chunkpilot$removeTicket(world, CHUNKPILOT_TICKET, pos, ticketLevel);
         return true;
     }
 
@@ -173,9 +210,10 @@ public class NeoForgePlatform implements PlatformAbstraction {
             }
 
             // vanilla 路径
+            // port/1.21.10: addRegionTicket 已不存在 → ServerChunkCache.addTicket(new Ticket(type, 33), pos)
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addRegionTicket(
-                CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+            level.getChunkSource().addTicket(
+                new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             return true;
         } catch (Throwable t) {
             return false;
@@ -201,7 +239,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().addTicket(
+                    new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             }
 
@@ -231,7 +270,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addRegionTicket(CHUNKPILOT_GEN_TICKET, pos, 31, pos);
+                level.getChunkSource().addTicket(
+                    new net.minecraft.server.level.Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             } catch (Throwable t2) {
                 return false;

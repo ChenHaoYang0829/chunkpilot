@@ -21,8 +21,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // port/1.21.10: 目标描述符必须按 1.21.10 的真实签名写死 (javap 实证):
+    //   1.21.1/1.21.3: send(Packet, PacketSendListener, boolean)
+    //   1.21.10:       send(Packet, ChannelFutureListener, boolean)
+    //     (net.minecraft.network.PacketSendListener 类还在, 但 Connection.send 已不再收它;
+    //      若继续用旧描述符 → mixin 找不到目标; neoforge mixins.json 是 required:true,
+    //      会直接启动崩溃, 所以必须显式给出新描述符.)
+    @Inject(
+        method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V",
+        at = @At("HEAD")
+    )
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();
@@ -37,7 +46,12 @@ public class ConnectionNetTrackerMixin {
         }
     }
 
-    @Inject(method = "channelRead0", at = @At("HEAD"))
+    // port/1.21.10: 显式给出描述符, 避免 Connection 上两个 channelRead0 重载
+    // (Packet<?> 与编译器生成的 Object 桥接) 造成目标歧义。
+    @Inject(
+        method = "channelRead0(Lio/netty/channel/ChannelHandlerContext;Lnet/minecraft/network/protocol/Packet;)V",
+        at = @At("HEAD")
+    )
     private void chunkpilot$onChannelRead(ChannelHandlerContext ctx, Packet<?> packet, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;

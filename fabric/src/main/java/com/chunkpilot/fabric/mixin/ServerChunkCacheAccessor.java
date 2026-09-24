@@ -22,6 +22,20 @@ public interface ServerChunkCacheAccessor {
     Thread chunkpilot$mainThread();
 
     /**
+     * port/1.21.10 新增: TicketStorage 入口。
+     *
+     * 1.21.10 把 addTicket/removeTicket 从 DistanceManager 挪到了
+     * {@code net.minecraft.world.level.TicketStorage}, 由 ServerChunkCache 以
+     * {@code private final TicketStorage ticketStorage} 持有 (javap 实证)。
+     * ServerChunkCache 只暴露了 public {@code addTicket(Ticket, ChunkPos)} 与
+     * {@code removeTicketWithRadius(TicketType, ChunkPos, int)} —— 后者按"半径"语义匹配,
+     * 与 CP 的"显式等级票据"不对应; 所以移除操作需要本 accessor 直接拿 TicketStorage,
+     * 调 public {@code removeTicket(Ticket, ChunkPos)} (内部按 type 引用相等 + level 相等匹配)。
+     */
+    @Accessor("ticketStorage")
+    net.minecraft.world.level.TicketStorage chunkpilot$ticketStorage();
+
+    /**
      * 原版"取区块 future"主线程版本. 调用它会产生**必要的副作用**:
      *   - load=true 时补一张 TicketType.UNKNOWN 票;
      *   - 把生成任务排进调度器 (getOrScheduleFuture).

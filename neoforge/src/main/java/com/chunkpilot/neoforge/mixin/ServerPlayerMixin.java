@@ -28,7 +28,8 @@ public abstract class ServerPlayerMixin {
             if (optimizer == null) return;
 
             ServerPlayer self = (ServerPlayer) (Object) this;
-            int worldId = self.serverLevel().hashCode();
+            // port/1.21.10: ServerPlayer.serverLevel() 已改名为 level() (javap 实证 1.21.10 只有 level())。
+            int worldId = self.level().hashCode();
             optimizer.onPlayerChunkUpdate(self.getUUID(), worldId, x, z);
 
             ChunkPilotNeoForge.LOGGER.debug("[ChunkPilot] teleportTo: {} → ({}, {}, {}) tick={}",
