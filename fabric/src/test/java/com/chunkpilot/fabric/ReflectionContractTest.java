@@ -153,13 +153,16 @@ class ReflectionContractTest {
             // 简单健全性检查: 包含 package 字段 + 包含 mixin 列表字段
             assertTrue(content.contains("\"package\""), "mixins.json 缺 package 字段");
             assertTrue(content.contains("\"mixins\""), "mixins.json 缺 mixins 字段");
-            // 26.1 (port/26.1) 起 MC **不再混淆**: Mojang 不再发布 client_mappings/server_mappings,
-            //   Fabric 也不再发布 intermediary (meta.fabricmc.net 对 26.1 返回 intermediary=0.0.0)。
-            //   ⇒ mixin 目标名**就是运行期真名**, refmap 机制整体不需要, 声明它反而会引用一个
-            //     永不存在的 chunkpilot.refmap.json。故本条断言**反转**: refmap 必须不存在。
-            //   (verify_artifacts.py 的判据也是"mixin 配置自己声明了 refmap 才要求文件存在"。)
-            assertFalse(content.contains("\"refmap\""),
-                "26.1 无混淆 ⇒ mixins.json 不应再声明 refmap (没有命名空间可映射)");
+            // 26.x (MC 不再混淆) 起**不再断言必须声明 refmap**:
+            //   1.21.x 时代编译期是 Mojang 名、运行期是 intermediary ⇒ 必须靠 refmap 翻译;
+            //   26.x 起编译期 == 运行期 == Mojang 名, 注解可直接命中; 反过来声明一个不存在的 refmap
+            //   只会让 Mixin 在启动期打 "Reference map ... could not be read"(假信号)。
+            //   ⇒ 新不变量: **声明了 refmap 就必须真的在 jar/classpath 里**; 不声明则不需要。
+            if (content.contains("\"refmap\"")) {
+                String refmap = content.replaceAll("(?s).*\"refmap\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                assertNotNull(getClass().getResourceAsStream("/" + refmap),
+                    "mixins.json 声明了 refmap=" + refmap + " 但该文件不在 classpath 里");
+            }
         } catch (Exception e) {
             fail("读 chunkpilot.mixins.json 失败: " + e.getMessage());
         }

@@ -244,6 +244,23 @@ public class NeoForgePlatform implements PlatformAbstraction {
      *
      * 如果没有 C2ME: 用 vanilla addTicketWithRadius 触发生成 (1.21.11 的 addRegionTicket).
      */
+    /**
+     * ★★ 2026-09-25 重大修复 (跨版本根因, 由 B3 在 1.21.9/10/11 上确诊, 我在 26.1 上字节码复核)：
+     *   `TicketStorage.addTicketWithRadius(TicketType, ChunkPos, radius)` 的第三个参数是**半径**，
+     *   它的字节码是 (javap -p -c net.minecraft.world.level.TicketStorage)：
+     *     new Ticket( type, ChunkLevel.byStatus(FullChunkStatus.FULL) - radius )
+     *   而 `ChunkLevel.byStatus(FullChunkStatus.FULL)` = **33**
+     *   (反编译 tableswitch: INACCESSIBLE→MAX_LEVEL, FULL→33, BLOCK_TICKING→32, ENTITY_TICKING→31)。
+     *   ⇒ 原来这里写的 `addTicketWithRadius(type, pos, **31**)` 等价于 `new Ticket(type, 33-31) = Ticket(type, **2**)`
+     *     —— 票等级 2 意味着该点周围半径 **31 个区块 (63×63 ≈ 3969 块)** 全部被拉到深加载！
+     *   ⇒ 这就是 neoforge 侧"每请求一个区块就引爆一大片"、覆盖塌陷 / MSPT 尖峰 / 前方 ahead 极低
+     *     而 behind 极高的**根因**; 也是探针读数 `own_ticket_level = 2` 的真正含义
+     *     (此前误判成"探针不可用"; 它其实是**如实的 bug 读数**)。
+     *   ⇒ 修复: 与 fabric 侧 `PREFETCH_TICKET_LEVEL` 完全同口径 —— 等级 **33 (=FULL)**,
+     *     只让**该区块自己**达到 FULL, 不产生任何半径扩散。
+     */
+    public static final int PREFETCH_TICKET_LEVEL = 33;
+
     @Override
     public boolean requestChunkAsync(int worldId, int chunkX, int chunkZ) {
         try {
@@ -260,7 +277,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
             // vanilla 路径
             ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-            level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+            level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
             markChunkRequested(pos.pack());  // 二阶段 B2: 记账, 供 ChunkMapGenerationMixin 判据用
             return true;
         } catch (Throwable t) {
@@ -287,7 +304,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             if (c2meScheduler == null || c2meAddTicketMethod == null || c2meTargetStatus == null) {
                 // C2ME API 解析失败, 回退到 vanilla
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             }
 
@@ -317,7 +334,7 @@ public class NeoForgePlatform implements PlatformAbstraction {
             // 回退到 vanilla
             try {
                 ChunkPos pos = new ChunkPos(chunkX, chunkZ);
-                level.getChunkSource().addTicketWithRadius(CHUNKPILOT_GEN_TICKET, pos, 31);
+                level.getChunkSource().addTicket(new Ticket(CHUNKPILOT_GEN_TICKET, PREFETCH_TICKET_LEVEL), pos);
                 return true;
             } catch (Throwable t2) {
                 return false;
