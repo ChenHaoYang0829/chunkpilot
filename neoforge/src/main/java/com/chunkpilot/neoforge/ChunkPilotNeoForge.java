@@ -95,6 +95,15 @@ public class ChunkPilotNeoForge {
         // v0.2.0 优化器 tick (扇形/ticket/集成)
         cp.getOptimizer().onServerTick();
 
+        // 二阶段 B2: 清空"本 tick CP 请求集合" —— 与 fabric 侧 ServerInitializer 同一时机
+        //   (每 tick 开头清, 之后由 GenerationScheduler → requestChunkAsync 重新填充).
+        //   ChunkMapGenerationMixin 用它判断"这个生成任务要不要提优先级". 纯记账, 无原版影响.
+        try {
+            com.chunkpilot.neoforge.platform.NeoForgePlatform.clearRequestedChunks();
+        } catch (Throwable t) {
+            // 安全: 不影响主 tick
+        }
+
         // 主动遍历在线玩家位置 — 每 tick 更新 speedTracker
         // 这不依赖 Mixin, RCON tp 也能被检测到
         try {
@@ -135,6 +144,28 @@ public class ChunkPilotNeoForge {
             // 调度器异常不应上抛, 否则下一次 onServerTick 会被 NeoForge 取消订阅
             LOGGER.warn("[ChunkPilot] GenerationScheduler tick failed: {}", t.toString());
         }
+
+        // 二阶段 B2 安全网 (与 fabric 侧 ServerInitializer v0.9.0 同源):
+        //   始终把玩家脚下周围 r=2 的区块标记为"CP 请求", 即使 CP 生成器这一 tick 什么都没请求,
+        //   玩家所在区块族也**永远不会**被 ChunkMapGenerationMixin 判为"非 CP 请求"而失去优先级.
+        //   (玩家不能站在未生成的 chunk 上; r=2 覆盖落地/转向/重生时周围一圈.)
+        try {
+            MinecraftServer _srv = ServerLifecycleHooks.getCurrentServer();
+            if (_srv != null) {
+                for (ServerPlayer sp : _srv.getPlayerList().getPlayers()) {
+                    if (sp.level() instanceof ServerLevel) {
+                        int cx = sp.chunkPosition().x;
+                        int cz = sp.chunkPosition().z;
+                        for (int dx = -2; dx <= 2; dx++) {
+                            for (int dz = -2; dz <= 2; dz++) {
+                                com.chunkpilot.neoforge.platform.NeoForgePlatform.markChunkRequested(
+                                    net.minecraft.world.level.ChunkPos.asLong(cx + dx, cz + dz));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
 
         // v0.4.0: 网络调度器 tick (发送优先级提示)
         try {
