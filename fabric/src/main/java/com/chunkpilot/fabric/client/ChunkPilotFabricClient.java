@@ -1,91 +1,24 @@
 package com.chunkpilot.fabric.client;
 
-import com.chunkpilot.client.ChunkPilotClient;
-import com.chunkpilot.config.ClientRenderConfig;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 
 /**
- * Fabric 客户端入口 (ClientModInitializer)
+ * Fabric 客户端入口 (ClientModInitializer) —— 1.0.0 起只剩一行日志.
  *
- * v0.4.0: 独立于服务端入口, 不引用任何服务端类.
- * 客户端只做渲染优化, 使用默认配置 (服务端会通过 CapabilityPacket 发送覆盖).
+ * 1.0.0 之前这里初始化的是"客户端渲染优先级"链路 (ChunkPilotClient /
+ * ChunkRenderScheduler / Sodium+vanilla 两个客户端 Mixin). 那条链路从未真正生效:
+ * 本类当时只是 {@code new ChunkPilotClient(...)} 造了个局部对象, 从不赋给
+ * {@code ChunkPilotClient.instance}, 于是所有查询点拿到的一律是 null 并静默 return.
+ * 该链路已整体删除 (见 1.0.0 死代码清理), 本类仅保留:
+ *   ① fabric.mod.json 的 client 入口点仍指向一个真实存在、可加载的类;
+ *   ② 客户端启动时留一条可核对的日志.
+ *
+ * 服务端逻辑仍在 ChunkPilotFabric (main 入口) → ServerInitializer.
  */
 public class ChunkPilotFabricClient implements ClientModInitializer {
 
-    private static long lastTickTime = 0;
-
     @Override
     public void onInitializeClient() {
-        System.out.println("[ChunkPilot] Client initializing...");
-
-        // 用默认配置初始化客户端 (enabled=false, 等服务端发 Capability 后才激活)
-        ClientRenderConfig defaultConfig = new ClientRenderConfig();
-        ChunkPilotClient client = new ChunkPilotClient(defaultConfig);
-
-        // 检测 Sodium
-        boolean sodiumLoaded = false;
-        try {
-            Class.forName("net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer");
-            sodiumLoaded = true;
-        } catch (ClassNotFoundException e) {
-            // Sodium 不存在
-        }
-        client.setSodiumDetected(sodiumLoaded);
-
-        if (sodiumLoaded) {
-            System.out.println("[ChunkPilot] Sodium detected, using Sodium-compatible render path");
-        } else {
-            System.out.println("[ChunkPilot] Sodium not detected, using vanilla render path");
-        }
-
-        // 注册客户端 tick
-        ClientTickEvents.END_CLIENT_TICK.register(mcClient -> {
-            onClientTick();
-        });
-
-        System.out.println("[ChunkPilot] Client initialized");
-    }
-
-    private static void onClientTick() {
-        ChunkPilotClient client = ChunkPilotClient.getInstance();
-        if (client == null || !client.isEnabled()) return;
-
-        try {
-            // 反射获取 Minecraft.getInstance().player
-            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
-            Object mc = mcClass.getMethod("getInstance").invoke(null);
-            Object player = mcClass.getMethod("player").invoke(mc);
-            if (player == null) return;
-
-            // 获取玩家位置
-            Object blockPos = player.getClass().getMethod("blockPosition").invoke(player);
-            int blockX = (int) blockPos.getClass().getMethod("getX").invoke(blockPos);
-            int blockZ = (int) blockPos.getClass().getMethod("getZ").invoke(blockPos);
-            int chunkX = blockX >> 4;
-            int chunkZ = blockZ >> 4;
-
-            // 获取玩家速度向量
-            Object deltaMove = player.getClass().getMethod("getDeltaMovement").invoke(player);
-            double dx = (double) deltaMove.getClass().getField("x").get(deltaMove);
-            double dz = (double) deltaMove.getClass().getField("z").get(deltaMove);
-            double speedBpt = Math.sqrt(dx * dx + dz * dz);
-            double direction = 0;
-            if (dx != 0 || dz != 0) {
-                direction = Math.atan2(dz, dx);
-            }
-
-            client.updatePlayerState(chunkX, chunkZ, speedBpt, direction);
-
-            // 记录帧时间
-            long now = System.nanoTime();
-            if (lastTickTime > 0) {
-                long frameNanos = now - lastTickTime;
-                client.onFrameEnd(frameNanos);
-            }
-            lastTickTime = now;
-        } catch (Exception e) {
-            // 反射失败, 静默
-        }
+        System.out.println("[ChunkPilot] client side initialized (1.0.0: 客户端无渲染侧功能, 优化均来自服务端)");
     }
 }
