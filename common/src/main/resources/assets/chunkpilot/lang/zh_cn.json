@@ -14,7 +14,7 @@
   "chunkpilot.error.need_op": "§c该子命令需要 OP 权限 (等级 %1$d), 你当前等级为 %2$d。",
   "chunkpilot.error.diagnose_self_only": "§7(非 OP: 只显示你自己这一行; 总需求/服务端内部计数/其他玩家均已隐藏)",
   "chunkpilot.error.diagnose_failed": "§c体检失败: %1$s",
-  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  mode=§e%3$s§r  view=§e%4$d§r  mspt=§e%5$.1f§r  players=§e%6$d§r",
+  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  view=§e%3$d§r  mspt=§e%4$.1f§r  players=§e%5$d§r",
   "chunkpilot.status.online": "§7在线玩家: §e%1$d",
   "chunkpilot.optimizer.player_debug": "§e%1$s§r  速度=§a%2$.2f§r b/t  方向=§a%3$.0f§r°  票据=§a%4$d§r  最近更新tick=§a%5$s§r\n  %6$s",
   "chunkpilot.command.probe.usage": "§c用法: /chunkpilot probe <方块X> <方块Z> (方块坐标)",

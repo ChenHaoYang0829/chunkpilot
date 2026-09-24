@@ -6,7 +6,7 @@
 #       之后与手抄一份完全等价 (运行时只读文件系统上这一份, 不读 jar 内的模板).
 #
 # ============================ 定位: 参考值, 不全是代码默认值 ============================
-# 本文件给的是**推荐值**. 下面 14 个键的取值与代码里的字段默认值不同 —— 都是实测调优值
+# 本文件给的是**推荐值**. 下面 10 个键的取值与代码里的字段默认值不同 —— 都是实测调优值
 # 或为"拷走模板的服主"准备的开箱值, 不是笔误 (代码默认值往往是更保守的那一个):
 #
 #   [generation] enabled                                = true  (代码默认 false) ← 见下方专门说明
@@ -15,10 +15,6 @@
 #   [chunk_send] lookAheadSeconds                       = 5.0   (代码默认 3.0)
 #   [chunk_send] direction_gamma                        = 2.0   (代码默认 4.0; 该键当前只被展示, 不参与计算)
 #   [chunk_send] v_boost_beta                           = 0.5   (代码默认 1.0; 同上)
-#   [client_render] k                                   = 1.0   (代码默认 0.15)
-#   [client_render] lookAheadSeconds                    = 5.0   (代码默认 3.0)
-#   [client_render] direction_gamma                     = 2.0   (代码默认 4.0; 该字段无读取点, 待决策)
-#   [client_render] v_boost_beta                        = 0.5   (代码默认 1.0; 同上)
 #   [integration.create] lookAheadChunks                = 32    (代码默认 8)
 #   [integration.mtr] lookAheadChunks                   = 32    (代码默认 8)
 #   [integration.immersive_railroading] lookAheadChunks  = 32   (代码默认 8)
@@ -30,10 +26,15 @@
 #   但必须知情 —— 想关掉改成 false 即可。
 #
 # 其余所有键的取值都等于代码里的字段默认值 (可用 /chunkpilot config show 对照).
+#
+# ================= 1.0.0 删掉的键: 旧配置写了也不会报错 =================
+# 1.0.0 把"只被解析、从未被任何代码读取"的键和它们的整节删掉了:
+#   [client_render] (整节 11 键, 连同它服务的客户端渲染链路) / [structure] (整节 4 键) /
+#   [speedTiers] curveMode, customFormula / [protection] maxMemoryPercent, autoLiteMode, liteModeRadius.
+# 解析器对**未知节/未知键一律静默忽略**, 因此老配置原样放着可以直接用, 只是这些键不再有效果.
 
 [general]
 enabled = true
-mode = "sector"
 logLevel = "info"
 # 输出语言: "auto" = 玩家消息跟随其客户端语言, 控制台/日志用 en_us; 也可写死 "zh_cn" / "en_us".
 language = "auto"
@@ -53,7 +54,8 @@ lowSpeedThreshold = 0.75
 lowSpeedRevoke = 0.45
 
 [speedTiers]
-curveMode = "stepped"
+# 1.0.0: 本节的 curveMode / customFormula 两个键已删除 (只被解析、代码里零处读取).
+# 档位表本身仍在下面 —— 它是扇形/核心/尾巴半径的真实来源.
 
 [[speedTiers.tier]]
 name = "walk"
@@ -91,34 +93,9 @@ sectorAngle = 35
 sectorRadius = -2
 tailRadius = 1
 
-[structure]
-enabled = true
-priorityLoading = true
-edgeDelayTicks = 2
-interestingStructures = [
-    "minecraft:village",
-    "minecraft:desert_pyramid",
-    "minecraft:jungle_temple",
-    "minecraft:shipwreck",
-    "minecraft:ocean_ruin",
-    "minecraft:buried_treasure",
-    "minecraft:pillager_outpost",
-    "minecraft:mansion",
-    "minecraft:monument",
-    "minecraft:ancient_city",
-    "minecraft:fortress",
-    "minecraft:bastion_remnant",
-    "minecraft:stronghold",
-    "minecraft:end_city",
-]
-
 [protection]
 maxMspt = 40
 disableMspt = 50
-maxMemoryPercent = 75
-ticketExpiryTicks = 100
-autoLiteMode = true
-liteModeRadius = 6
 # v0.10: 扇形 ticket 硬上限提到 100 (给自适应档位留空间); 每 tick 新增限 4 (压 worldgen 灌量)
 maxSectorTickets = 100
 maxNewTicketsPerTick = 2
@@ -261,8 +238,6 @@ enabled = false              # v0.7.0: 默认关闭 (1.21.3 ChunkDataSender.make
 v_min = 0.7
 k = 1.0                      # 距离衰减
 lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 方向锐化指数 (当前仅展示, 不参与计算)
-v_boost_beta = 0.5           # v0.7.0: 速度加成 (当前仅展示, 不参与计算)
 
 # ===== 前瞻窗口 Forward Look-ahead Window (v0.11.6) =====
 # 原版给玩家的是**以玩家为中心**的对称窗口 ([p-vd, p+vd]): 高速前进时, 前方 vd 区块处的区块
@@ -303,20 +278,3 @@ refreshTicks = 20
 turnThresholdDeg = 25.0
 # 速度上限保护 (chunks/s): 超过视为传送/异常, 不做任何前移 (避免把窗口甩到极远处).
 maxSpeed = 200.0
-
-# 客户端自适应渲染 (与服务端 [chunk_send] 对称, 同用 v0.9.0 投影公式)
-# 注意: c1 / v_ref 已移除; 本节的 direction_gamma / v_boost_beta 当前**没有任何读取点**
-#       (连 /chunkpilot send status 都不显示它们 — 那里显示的是 [chunk_send] 的同名键).
-[client_render]
-enabled = false
-target_fps = 60
-v_min = 0.7                  # 最低速度阈值 (chunks/s): 低于此值客户端不干预, 走 vanilla/Sodium 默认渲染顺序
-k = 1.0
-lookAheadSeconds = 5.0
-direction_gamma = 2.0        # v0.7.0: 与 [chunk_send] 一致 (当前无读取点)
-v_boost_beta = 0.5           # v0.7.0: 当前无读取点
-frame_window = 60
-stable_threshold_ms = 2.0
-overload_factor = 1.1
-underload_factor = 0.7
-sodium_compatible = true

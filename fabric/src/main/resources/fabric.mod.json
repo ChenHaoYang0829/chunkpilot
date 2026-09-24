@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "chunkpilot",
-  "version": "0.10.10-alpha",
+  "version": "1.0.0",
   "name": "ChunkPilot",
   "description": "Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).",
   "authors": [
@@ -20,8 +20,7 @@
     ]
   },
   "mixins": [
-    "chunkpilot.mixins.json",
-    "chunkpilot.client.mixins.json"
+    "chunkpilot.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.15.11",
