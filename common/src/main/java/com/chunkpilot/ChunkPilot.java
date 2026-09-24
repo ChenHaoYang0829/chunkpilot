@@ -3,7 +3,6 @@ package com.chunkpilot;
 import com.chunkpilot.config.ChunkPilotConfig;
 import com.chunkpilot.core.ChunkLoadOptimizer;
 import com.chunkpilot.generation.GenerationScheduler;
-import com.chunkpilot.network.ServerNetworkDispatcher;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.chunkpilot.send.ChunkSendScheduler;
 import org.slf4j.Logger;
@@ -15,7 +14,7 @@ import org.slf4j.LoggerFactory;
  */
 public class ChunkPilot {
     public static final String MOD_ID = "chunkpilot";
-    public static final String VERSION = "0.10.10-alpha";
+    public static final String VERSION = "1.0.0";
 
     private static final Logger LOG = LoggerFactory.getLogger("ChunkPilot");
     private static ChunkPilot instance;
@@ -27,9 +26,6 @@ public class ChunkPilot {
     private GenerationScheduler generationScheduler;
     /** v0.3.0 区块发送顺序优化器. Mixin 拦截 PlayerChunkSender 时调用. */
     private ChunkSendScheduler chunkSendScheduler;
-
-    /** v0.4.0 服务端网络调度器. 管理握手+优先级下发. */
-    private ServerNetworkDispatcher networkDispatcher;
 
     public ChunkPilot(PlatformAbstraction platform) {
         this.platform = platform;
@@ -44,7 +40,6 @@ public class ChunkPilot {
         //   (玩家消息跟随其客户端语言; 控制台/日志用全局语言)
         com.chunkpilot.i18n.I18n.configure(config.language);
         com.chunkpilot.i18n.I18n.setPlayerLocaleResolver(platform::getPlayerLanguage);
-        // v0.4.0: 网络调度器延迟初始化 (需要 PlatformNetworkSender, 由平台层注入)
         instance = this;
         LOG.info("ChunkPilot initialized: enabled={}, speedWindow={}t, lowSpeedThreshold={} b/t, providers={}, genScheduler={}, sendScheduler={}",
             config.enabled, config.speedWindowTicks, config.lowSpeedThreshold,
@@ -64,15 +59,6 @@ public class ChunkPilot {
     public GenerationScheduler getGenerationScheduler() { return generationScheduler; }
     /** v0.3.0 发送排序器. null 仅在 ChunkPilot 构造失败时出现. */
     public ChunkSendScheduler getChunkSendScheduler() { return chunkSendScheduler; }
-
-    /** v0.4.0 网络调度器. */
-    public ServerNetworkDispatcher getNetworkDispatcher() { return networkDispatcher; }
-
-    /** v0.4.0: 由平台层注入网络发送器, 初始化网络调度器. */
-    public void initNetwork(com.chunkpilot.network.PlatformNetworkSender sender) {
-        this.networkDispatcher = new ServerNetworkDispatcher(config, sender);
-        LOG.info("ChunkPilot network dispatcher initialized");
-    }
 
     /** 热重载配置（由 /chunkpilot reload config 调用） */
     public void reloadConfig() {
