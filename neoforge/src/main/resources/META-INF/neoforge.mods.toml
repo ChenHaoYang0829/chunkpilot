@@ -5,7 +5,7 @@ issueTrackerURL = ""
 
 [[mods]]
 modId = "chunkpilot"
-version = "0.5.0-alpha"
+version = "1.0.0"
 displayName = "ChunkPilot"
 authors = "ChunkPilot Team"
 description = '''
@@ -28,8 +28,12 @@ side = "BOTH"
 
 # 2026-09-24 死代码清理: 原有一条 [[dependencies.chunkpilot]] modId="architectury" type="required" —— 已删除。
 # 本模组代码零处使用 Architectury (无 @ExpectPlatform, 编译产物零引用), 那条声明只会逼玩家多装一个没用的 mod。
+#
+# 1.0.0 死代码清理: 原有第二条 [[mixins]] (指向 chunkpilot.client.mixins.json 的那条) —— 已删除。
+# 那个客户端 mixin 配置里注册的两个 Mixin (Sodium / ChunkRenderDispatcher) 从不产生任何效果
+# (查询的 ChunkPilotClient.getInstance() 恒为 null), 已随"客户端渲染优先级"链路整体删除;
+# 留着一条声明指向不存在的类会让 Mixin 在客户端启动期直接报配置错误。
+# 注意: 上面两行注释里**不能**出现 config 赋值那种字面写法 —— 交付校验脚本
+#   (scripts/verify_artifacts.py) 是用正则从本文件里扫 mixin 配置名的, 注释里写出来会被算成"声明了"。
 [[mixins]]
 config = "chunkpilot.mixins.json"
-
-[[mixins]]
-config = "chunkpilot.client.mixins.json"

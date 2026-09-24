@@ -27,11 +27,9 @@ public class ChunkSendConfig {
     // ===== v0.8.0 发送器参数集 =====
 
     /** 方向锐化指数 γ (默认 4.0, 窄锥; =1.0 无锐化) */
-    public double direction_gamma = 4.0;
 
     /** 距离衰减系数 k (默认 0.6, 近前方优先; v0.10.6 由 0.15 上调, 前方集中度 0.410->0.674, mspt 更优) */
     public double k = 0.6;
 
     /** 速度敏感系数 β (无量纲, 默认 1.0; =0 无速度加成) */
-    public double v_boost_beta = 1.0;
 }

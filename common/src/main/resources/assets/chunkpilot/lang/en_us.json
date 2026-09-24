@@ -14,7 +14,7 @@
   "chunkpilot.error.need_op": "§cThis subcommand requires OP (permission level %1$d). You have level %2$d.",
   "chunkpilot.error.diagnose_self_only": "§7(non-OP: showing only your own data; total demand / server internals / other players are hidden)",
   "chunkpilot.error.diagnose_failed": "§cdiagnose failed: %1$s",
-  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  mode=§e%3$s§r  view=§e%4$d§r  mspt=§e%5$.1f§r  players=§e%6$d§r",
+  "chunkpilot.optimizer.status": "§aChunkPilot§r v%1$s  enabled=§e%2$s§r  view=§e%3$d§r  mspt=§e%4$.1f§r  players=§e%5$d§r",
   "chunkpilot.status.online": "§7Online players: §e%1$d",
   "chunkpilot.optimizer.player_debug": "§e%1$s§r  speed=§a%2$.2f§r b/t  dir=§a%3$.0f§r°  tickets=§a%4$d§r  lastUpdateTick=§a%5$s§r\n  %6$s",
   "chunkpilot.command.probe.usage": "§cUsage: /chunkpilot probe <blockX> <blockZ> (block coords)",

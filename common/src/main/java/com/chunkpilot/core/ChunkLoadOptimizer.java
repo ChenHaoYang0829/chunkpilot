@@ -636,7 +636,7 @@ public class ChunkLoadOptimizer {
         //   (原来会输出 CP 票数 / mixin 调用数 / override 调用数 / 模组联动列表)
         return com.chunkpilot.i18n.I18n.trFor(viewerId, "chunkpilot.optimizer.status",
             com.chunkpilot.ChunkPilot.VERSION,
-            config.enabled, config.mode, platform.getServerRenderDistance(),
+            config.enabled, platform.getServerRenderDistance(),
             platform.getCurrentMspt(), getActivePlayerCount());
     }
 

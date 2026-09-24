@@ -25,7 +25,9 @@ ext {
     architecturyVersion = "18.0.5"
     
     // Mod
-    modVersion = "0.10.10-alpha"  // v0.10.6: 发送器 k 默认 0.15->0.6 (近前方优先, 前方集中度 0.410->0.674, mspt 更优)
+    // 1.0.0: 版本号统一 —— 本处 (jar 名) 与 fabric.mod.json / neoforge.mods.toml /
+    //   ChunkPilot.VERSION 四处必须一致, 且都不再带 -alpha 后缀。
+    modVersion = "1.0.0"
     modGroup = "com.chunkpilot"
     modId = "chunkpilot"
 }
