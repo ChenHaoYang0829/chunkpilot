@@ -10,7 +10,13 @@
     "PlayerChunkSenderMixin",
     "PlayerChunkSenderSendMixin",
     "ServerPlayerMixin",
-    "CheckExtensibleEnumsMixin"
+    "CheckExtensibleEnumsMixin",
+    "ServerChunkCacheAccessor",
+    "LevelNonBlockingReadMixin",
+    "ServerChunkCacheNonBlockingMixin",
+    "ServerGamePacketListenerMoveMixin",
+    "ChunkMapTrackingViewMixin",
+    "ChunkMapGenerationMixin"
   ],
   "client": [],
   "injectors": {

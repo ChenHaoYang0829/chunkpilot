@@ -110,6 +110,25 @@ tasks.register('fixRefmap') {
         ant.unjar(src: jarFile, dest: tmpDir)
         
         // 写新的 Mojang 命名 refmap
+        //
+        // 2026-09-24 二阶段 B2 整改: 新增 6 个 mixin (ServerChunkCacheAccessor / LevelNonBlockingReadMixin /
+        //   ServerChunkCacheNonBlockingMixin / ServerGamePacketListenerMoveMixin / ChunkMapTrackingViewMixin /
+        //   ChunkMapGenerationMixin) 的 refmap 条目。**键名格式与值都照 fabric 侧 loom 生成的
+        //   refmap 逐字对齐** (从 chunkpilot-fabric-1.21.5.jar 的 chunkpilot.refmap.json 提取后
+        //   把 intermediary 名换成本版本的 Mojang 名), 因为运行时就是 Mojang 命名 ⇒ 值==键 (恒等映射),
+        //   不会改变任何成员解析结果。
+        //   descriptor 的 javap 依据 (四个版本的 NeoForge -server.jar 与 mapped MC jar 各核一次, 结论一致):
+        //     Level.getChunkForCollisions(II)Lnet/minecraft/world/level/BlockGetter;                public
+        //     Level.getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;  public
+        //     Level.getFluidState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/material/FluidState;      public
+        //     ServerChunkCache.getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;  public
+        //     ServerChunkCache.getVisibleChunkIfPresent(J)Lnet/minecraft/server/level/ChunkHolder;                  private
+        //     ServerChunkCache.mainThread:Ljava/lang/Thread;                                                       包可见 final
+        //     ServerChunkCache.getChunkFutureMainThread(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Ljava/util/concurrent/CompletableFuture;  private
+        //     ChunkMap.updateChunkTracking(Lnet/minecraft/server/level/ServerPlayer;)V                               private
+        //     ChunkMap.runGenerationTask(Lnet/minecraft/server/level/ChunkGenerationTask;)V                        private
+        //     ChunkTaskDispatcher.submit(Ljava/lang/Runnable;JLjava/util/function/IntSupplier;)V                    public
+        //     ServerGamePacketListenerImpl.handleMovePlayer(Lnet/minecraft/network/protocol/game/ServerboundMovePlayerPacket;)V  public
         def refmapFile = file("$tmpDir/chunkpilot.refmap.json")
         refmapFile.text = '''{
   "mappings": {
@@ -125,6 +144,30 @@ tasks.register('fixRefmap') {
     },
     "com/chunkpilot/neoforge/mixin/ServerPlayerMixin": {
       "teleportTo": "Lnet/minecraft/server/level/ServerPlayer;teleportTo(DDD)V"
+    },
+    "com/chunkpilot/neoforge/mixin/ServerChunkCacheAccessor": {
+      "getVisibleChunkIfPresent": "getVisibleChunkIfPresent(J)Lnet/minecraft/server/level/ChunkHolder;",
+      "mainThread": "mainThread:Ljava/lang/Thread;",
+      "getChunkFutureMainThread": "getChunkFutureMainThread(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Ljava/util/concurrent/CompletableFuture;"
+    },
+    "com/chunkpilot/neoforge/mixin/LevelNonBlockingReadMixin": {
+      "getChunkForCollisions": "Lnet/minecraft/world/level/Level;getChunkForCollisions(II)Lnet/minecraft/world/level/BlockGetter;",
+      "getBlockState": "Lnet/minecraft/world/level/Level;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;",
+      "getFluidState": "Lnet/minecraft/world/level/Level;getFluidState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/material/FluidState;"
+    },
+    "com/chunkpilot/neoforge/mixin/ServerChunkCacheNonBlockingMixin": {
+      "getChunk": "Lnet/minecraft/server/level/ServerChunkCache;getChunk(IILnet/minecraft/world/level/chunk/status/ChunkStatus;Z)Lnet/minecraft/world/level/chunk/ChunkAccess;"
+    },
+    "com/chunkpilot/neoforge/mixin/ServerGamePacketListenerMoveMixin": {
+      "handleMovePlayer": "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;handleMovePlayer(Lnet/minecraft/network/protocol/game/ServerboundMovePlayerPacket;)V"
+    },
+    "com/chunkpilot/neoforge/mixin/ChunkMapTrackingViewMixin": {
+      "updateChunkTracking": "Lnet/minecraft/server/level/ChunkMap;updateChunkTracking(Lnet/minecraft/server/level/ServerPlayer;)V",
+      "Lnet/minecraft/server/level/ChunkTrackingView;of(Lnet/minecraft/world/level/ChunkPos;I)Lnet/minecraft/server/level/ChunkTrackingView;": "Lnet/minecraft/server/level/ChunkTrackingView;of(Lnet/minecraft/world/level/ChunkPos;I)Lnet/minecraft/server/level/ChunkTrackingView;"
+    },
+    "com/chunkpilot/neoforge/mixin/ChunkMapGenerationMixin": {
+      "runGenerationTask": "Lnet/minecraft/server/level/ChunkMap;runGenerationTask(Lnet/minecraft/server/level/ChunkGenerationTask;)V",
+      "Lnet/minecraft/server/level/ChunkTaskDispatcher;submit(Ljava/lang/Runnable;JLjava/util/function/IntSupplier;)V": "Lnet/minecraft/server/level/ChunkTaskDispatcher;submit(Ljava/lang/Runnable;JLjava/util/function/IntSupplier;)V"
     }
   }
 }
