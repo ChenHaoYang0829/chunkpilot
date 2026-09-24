@@ -9,6 +9,9 @@ gradle-*.zip
 test-server/
 test-server-2/
 test-server-fabric/
+# 2026-09-25 (分支 forge/1.20.1): 1.20.1 Forge 的**私有验证服**
+#   (libraries 是 symlink, world/ logs/ 是运行期产物 —— 都不该进 git)
+srv-forge1201/
 bench_server/
 fabric/run/
 neoforge/run/
