@@ -28,6 +28,10 @@ dependencies {
     // SpongePowered Mixin 注解(@Mixin/@Inject/@Shadow/@Accessor/@Invoker)。
     // 版本必须与 NeoForge 26.2.0.88 的 pom 一致(它自己依赖 sponge-mixin 0.17.3+mixin.0.8.7)。
     compileOnly "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7"
+
+    // FancyModLoader 的 `net.neoforged.fml.*`(如 FMLEnvironment.dist)不在 moddev 的
+    // 编译 classpath 上, 需要显式声明; 版本必须与 NeoForge 26.2.0.88 的 pom 一致 (11.0.16)。
+    compileOnly "net.neoforged.fancymodloader:loader:11.0.16"
 }
 
 // 引用 common 源码 (不依赖 common 项目 —— common 关掉了 jar, 走 project 依赖会让构建图里

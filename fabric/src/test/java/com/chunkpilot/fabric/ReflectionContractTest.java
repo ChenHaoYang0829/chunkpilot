@@ -153,7 +153,17 @@ class ReflectionContractTest {
             // 简单健全性检查: 包含 package 字段 + 包含 mixin 列表字段
             assertTrue(content.contains("\"package\""), "mixins.json 缺 package 字段");
             assertTrue(content.contains("\"mixins\""), "mixins.json 缺 mixins 字段");
-            assertTrue(content.contains("\"refmap\""), "mixins.json 缺 refmap 字段 (loom 会找不到)");
+            // 26.2 (MC 26.x 不再混淆): **不再断言必须声明 refmap**。
+            //   旧断言 ("缺 refmap 字段 (loom 会找不到)") 是 1.21.x 时代的产物 —— 那时运行期是
+            //   intermediary 而注解里写的是 Mojang 名, 必须靠 refmap 翻译。26.x 的编译期 == 运行期
+            //   == Mojang 名, 注解可以**直接命中**; 反过来声明一个不存在的 refmap 只会让 Mixin 在
+            //   启动期打 "Reference map ... could not be read" 的警告(假信号)。
+            //   ⇒ 新不变量: 若声明了 refmap, 该文件就必须真的在 jar 里; 否则宁可不声明。
+            if (content.contains("\"refmap\"")) {
+                String refmap = content.replaceAll("(?s).*\"refmap\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                assertNotNull(getClass().getResourceAsStream("/" + refmap),
+                    "mixins.json 声明了 refmap=" + refmap + " 但该文件不在 classpath 里");
+            }
         } catch (Exception e) {
             fail("读 chunkpilot.mixins.json 失败: " + e.getMessage());
         }

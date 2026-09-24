@@ -21,8 +21,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketSendListener;Z)V", at = @At("HEAD"))
-    private void chunkpilot$onSend(Packet<?> packet, net.minecraft.network.PacketSendListener listener, boolean flush, CallbackInfo ci) {
+    // 26.2 (javap 实证): `Connection.send` 有三个重载 —— send(Packet) / send(Packet, ChannelFutureListener)
+    //   / send(Packet, ChannelFutureListener, boolean)。**第二参数类型不再是 PacketSendListener**
+    //   (该类仍在, 但已不作为参数出现, 与 1.21.11 的变化相同)。
+    // ⚠ 这里用的是**硬编码 descriptor**, 不经过 refmap ⇒ 一旦签名变了就是"编译通过、启动崩":
+    //   旧 descriptor 命中不到目标 ⇒ InvalidInjectionException(Critical injection failure)
+    //   ⇒ MixinApplyError ⇒ 服务端起不来 (1.21.11 报告 §2.2 ★ 记录过同一个坑)。
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
             Object pl = self.getPacketListener();

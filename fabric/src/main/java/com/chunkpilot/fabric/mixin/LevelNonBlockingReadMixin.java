@@ -73,7 +73,7 @@ public abstract class LevelNonBlockingReadMixin {
     /** 该区块是否**已经**生成到 FULL (全程不阻塞: 一次 map 查找 + CompletableFuture.getNow). */
     private static boolean chunkpilot$isFullyReady(ServerLevel level, int chunkX, int chunkZ) {
         ChunkHolder holder = ((ServerChunkCacheAccessor) (ServerChunkCache) level.getChunkSource())
-            .chunkpilot$getVisibleChunkIfPresent(ChunkPos.asLong(chunkX, chunkZ));
+            .chunkpilot$getVisibleChunkIfPresent(ChunkPos.pack(chunkX, chunkZ));
         if (holder == null) return false;
         CompletableFuture<ChunkResult<LevelChunk>> full = holder.getFullChunkFuture();
         if (!full.isDone()) return false;

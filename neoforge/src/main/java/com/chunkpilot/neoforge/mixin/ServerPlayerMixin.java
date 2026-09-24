@@ -28,7 +28,7 @@ public abstract class ServerPlayerMixin {
             if (optimizer == null) return;
 
             ServerPlayer self = (ServerPlayer) (Object) this;
-            int worldId = self.serverLevel().hashCode();
+            int worldId = self.level().hashCode();
             optimizer.onPlayerChunkUpdate(self.getUUID(), worldId, x, z);
 
             ChunkPilotNeoForge.LOGGER.debug("[ChunkPilot] teleportTo: {} → ({}, {}, {}) tick={}",

@@ -3,7 +3,6 @@
   "minVersion": "0.8",
   "package": "com.chunkpilot.fabric.mixin",
   "compatibilityLevel": "JAVA_25",
-  "refmap": "chunkpilot.refmap.json",
   "mixins": [],
   "server": [
     "ChunkDataSenderMixin",

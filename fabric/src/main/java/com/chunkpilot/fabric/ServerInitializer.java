@@ -80,7 +80,7 @@ public class ServerInitializer {
                             // 冻结检测器心跳: 记录玩家所在 chunk
                             try {
                                 com.chunkpilot.fabric.platform.FabricPlatform.onServerTickHeartbeat(
-                                    sl.hashCode(), sp.chunkPosition().x, sp.chunkPosition().z);
+                                    sl.hashCode(), sp.chunkPosition().x(), sp.chunkPosition().z());
                             } catch (Throwable t) {
                                 heartbeatFailures++;
                                 if (heartbeatFailures <= 3 || heartbeatFailures % 600 == 0) {
@@ -132,12 +132,12 @@ public class ServerInitializer {
             try {
                 for (var sp : server.getPlayerList().getPlayers()) {
                     if (sp.level() instanceof net.minecraft.server.level.ServerLevel) {
-                        int cx = sp.chunkPosition().x;
-                        int cz = sp.chunkPosition().z;
+                        int cx = sp.chunkPosition().x();
+                        int cz = sp.chunkPosition().z();
                         for (int dx = -2; dx <= 2; dx++) {
                             for (int dz = -2; dz <= 2; dz++) {
                                 com.chunkpilot.fabric.platform.FabricPlatform.markChunkRequested(
-                                    net.minecraft.world.level.ChunkPos.asLong(cx + dx, cz + dz));
+                                    net.minecraft.world.level.ChunkPos.pack(cx + dx, cz + dz));
                             }
                         }
                     }
@@ -173,47 +173,47 @@ public class ServerInitializer {
             MinecraftServer server = context.getSource().getServer();
             return SharedSuggestionProvider.suggest(
                 server.getPlayerList().getPlayers().stream()
-                    .map(p -> p.getGameProfile().getName()),
+                    .map(p -> p.getGameProfile().name()),
                 builder
             );
         };
 
         dispatcher.register(
             net.minecraft.commands.Commands.literal("chunkpilot")
-                .requires(src -> src.hasPermission(0))
+                .requires(src -> hasPerm(src, 0))
                 .executes(ctx -> runMain(ctx, new String[0]))
                 .then(net.minecraft.commands.Commands.literal("status")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> hasPerm(src, 0))
                     .executes(ctx -> runMain(ctx, new String[]{"status"})))
                 .then(net.minecraft.commands.Commands.literal("reload")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> hasPerm(src, 0))
                     .executes(ctx -> runMain(ctx, new String[]{"reload"}))
                     .then(net.minecraft.commands.Commands.literal("config")
-                        .requires(src -> src.hasPermission(4))
+                        .requires(src -> hasPerm(src, 4))
                         .executes(ctx -> runMain(ctx, new String[]{"reload", "config"})))
                     .then(net.minecraft.commands.Commands.argument("player", StringArgumentType.string())
-                        .requires(src -> src.hasPermission(4))
+                        .requires(src -> hasPerm(src, 4))
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"reload", StringArgumentType.getString(ctx, "player")}))))
                 .then(net.minecraft.commands.Commands.literal("config")
-                    .requires(src -> src.hasPermission(4))
+                    .requires(src -> hasPerm(src, 4))
                     .then(net.minecraft.commands.Commands.literal("show").executes(ctx -> runMain(ctx, new String[]{"config", "show"})))
                     .then(net.minecraft.commands.Commands.literal("reload").executes(ctx -> runMain(ctx, new String[]{"config", "reload"}))))
                 .then(net.minecraft.commands.Commands.literal("player")
-                    .requires(src -> src.hasPermission(2))
+                    .requires(src -> hasPerm(src, 2))
                     .executes(ctx -> runMain(ctx, new String[]{"player"}))
                     .then(net.minecraft.commands.Commands.argument("name", StringArgumentType.string())
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"player", StringArgumentType.getString(ctx, "name")}))))
                 .then(net.minecraft.commands.Commands.literal("net")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> hasPerm(src, 0))
                     .executes(ctx -> runMain(ctx, new String[]{"net"}))
                     .then(net.minecraft.commands.Commands.argument("name", StringArgumentType.string())
-                        .requires(src -> src.hasPermission(4))
+                        .requires(src -> hasPerm(src, 4))
                         .suggests(playerSuggest)
                         .executes(ctx -> runMain(ctx, new String[]{"net", StringArgumentType.getString(ctx, "name")}))))
                 .then(net.minecraft.commands.Commands.literal("gen")
-                    .requires(src -> src.hasPermission(2))
+                    .requires(src -> hasPerm(src, 2))
                     .executes(ctx -> runMain(ctx, new String[]{"gen"}))
                     .then(net.minecraft.commands.Commands.literal("queue")
                         .executes(ctx -> runMain(ctx, new String[]{"gen", "queue"})))
@@ -223,19 +223,19 @@ public class ServerInitializer {
                         .executes(ctx -> runMain(ctx, new String[]{"gen", "status"})))
                     )
                 .then(net.minecraft.commands.Commands.literal("debug")
-                    .requires(src -> src.hasPermission(4))
+                    .requires(src -> hasPerm(src, 4))
                     .executes(ctx -> runMain(ctx, new String[]{"debug"})))
                 .then(net.minecraft.commands.Commands.literal("send")
-                    .requires(src -> src.hasPermission(2))
+                    .requires(src -> hasPerm(src, 2))
                     .executes(ctx -> runMain(ctx, new String[]{"send"}))
                     .then(net.minecraft.commands.Commands.literal("status")
                         .executes(ctx -> runMain(ctx, new String[]{"send", "status"})))
                     )
                 .then(net.minecraft.commands.Commands.literal("diagnose")
-                    .requires(src -> src.hasPermission(0))   // 非 OP 走"只看自己"
+                    .requires(src -> hasPerm(src, 0))   // 非 OP 走"只看自己"
                     .executes(ctx -> runMain(ctx, new String[]{"diagnose"})))
                 .then(net.minecraft.commands.Commands.literal("probe")
-                    .requires(src -> src.hasPermission(2))
+                    .requires(src -> hasPerm(src, 2))
                     .executes(ctx -> runMain(ctx, new String[]{"probe"}))
                     .then(net.minecraft.commands.Commands.argument("x", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
                         .then(net.minecraft.commands.Commands.argument("z", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
@@ -244,11 +244,11 @@ public class ServerInitializer {
                                 String.valueOf(com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "x")),
                                 String.valueOf(com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "z"))})))))
                 .then(net.minecraft.commands.Commands.literal("lang")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> hasPerm(src, 0))
                     .executes(ctx -> runMain(ctx, new String[]{"lang"}))
                     .then(net.minecraft.commands.Commands.argument("code", StringArgumentType.string())
                         // 切换语言是**服务端全局**行为 (影响控制台与 auto 模式下所有玩家), 需要 op
-                        .requires(src -> src.hasPermission(2))
+                        .requires(src -> hasPerm(src, 2))
                         .suggests((ctx, b) -> {
                             b.suggest("auto");
                             for (String code : com.chunkpilot.i18n.I18n.availableLanguages()) b.suggest(code);
@@ -256,23 +256,45 @@ public class ServerInitializer {
                         })
                         .executes(ctx -> runMain(ctx, new String[]{"lang", StringArgumentType.getString(ctx, "code")}))))
                 .then(net.minecraft.commands.Commands.literal("help")
-                    .requires(src -> src.hasPermission(0))
+                    .requires(src -> hasPerm(src, 0))
                     .executes(ctx -> runMain(ctx, new String[]{"help"})))
         );
     }
 
+
+    /**
+     * 26.2 权限模型: `CommandSourceStack.hasPermission(int)` 已删除, 改为
+     * `permissions()` → `PermissionSet.hasPermission(Permission)`。
+     * 新模型的判定逻辑**就是**旧的 "等级 >= N" (`LevelBasedPermissionSet.hasPermission`
+     * 内部走 `level().isEqualOrHigherThan(required)`, javap 实证) ⇒ 语义等价。
+     */
+    private static boolean hasPerm(CommandSourceStack src, int level) {
+        if (level <= 0) return true;
+        net.minecraft.server.permissions.Permission required = switch (level) {
+            case 1 -> net.minecraft.server.permissions.Permissions.COMMANDS_MODERATOR;
+            case 2 -> net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER;
+            case 3 -> net.minecraft.server.permissions.Permissions.COMMANDS_ADMIN;
+            default -> net.minecraft.server.permissions.Permissions.COMMANDS_OWNER;
+        };
+        try {
+            return src.permissions().hasPermission(required);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** 把命令源的权限等级压成 CP 认识的三档 (0 / 2 / 4). 控制台恒为 4。 */
     private static int permLevel(CommandSourceStack src) {
-        if (src.hasPermission(4)) return 4;
-        if (src.hasPermission(3)) return 3;
-        if (src.hasPermission(2)) return 2;
-        return src.hasPermission(1) ? 1 : 0;
+        if (hasPerm(src, 4)) return 4;
+        if (hasPerm(src, 3)) return 3;
+        if (hasPerm(src, 2)) return 2;
+        return hasPerm(src, 1) ? 1 : 0;
     }
 
     private static int runMain(CommandContext<CommandSourceStack> ctx, String[] args) {
         var player = ctx.getSource().getPlayer();
         java.util.UUID execId = player != null ? player.getUUID() : null;
-        String name = player != null ? player.getGameProfile().getName() : "console";
+        String name = player != null ? player.getGameProfile().name() : "console";
         // v0.11.9: 权限判定集中在 ChunkPilotCommand (堵住 /chunkpilot 无参绕过 requires 的问题)
         String resp = ChunkPilotCommand.execute(execId, name, args, permLevel(ctx.getSource()));
         for (String line : resp.split("\n")) {

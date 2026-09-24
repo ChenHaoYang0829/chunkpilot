@@ -33,4 +33,19 @@ public interface ServerChunkCacheAccessor {
         chunkpilot$getChunkFutureMainThread(int x, int z,
             net.minecraft.world.level.chunk.status.ChunkStatus status, boolean load);
 
+    /**
+     * 26.2 新增: ticket 系统重写后 `DistanceManager` 不再暴露 addTicket/removeTicket,
+     * 全部落到 `net.minecraft.world.level.TicketStorage`. `ServerChunkCache.ticketStorage`
+     * 是 private final (javap 实证), 而公开 API 只有 `addTicket(Ticket, ChunkPos)` 与
+     * `removeTicketWithRadius(TicketType, ChunkPos, radius)` —— 后者只能表达
+     * `ChunkLevel.byStatus(FULL) - radius` 这一族等级, 无法按任意等级移除.
+     * 这里用 accessor 拿到 TicketStorage, 以便调用其 public `removeTicket(Ticket, ChunkPos)`
+     * (按"类型 + 等级"匹配, 与加入时对称).
+     *
+     * 注意: 26.x **没有 remap**(运行期==编译期==Mojang 名), 所以 accessor 直接按字段名
+     * `ticketStorage` 命中, 不需要 refmap。
+     */
+    @Accessor("ticketStorage")
+    net.minecraft.world.level.TicketStorage chunkpilot$ticketStorage();
+
 }
