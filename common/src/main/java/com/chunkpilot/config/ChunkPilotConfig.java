@@ -16,7 +16,6 @@ public class ChunkPilotConfig {
 
     // ===== [general] 全局 =====
     public boolean enabled = true;
-    public String mode = "sector"; // none | sector | aggressive
     public String logLevel = "info";
     /**
      * 输出语言 (i18n). "auto" = 玩家消息跟随其客户端语言, 控制台/日志用 en_us;
@@ -34,22 +33,10 @@ public class ChunkPilotConfig {
 
     // ===== [speedTiers] 速度档位 =====
     public List<SpeedTier> speedTiers = new ArrayList<>();
-    public String curveMode = "stepped"; // stepped | linear
-    public String customFormula = "";
-
-    // ===== [structure] 结构感知 =====
-    public boolean structureEnabled = true;
-    public boolean structurePriorityLoading = true;
-    public List<String> interestingStructures = new ArrayList<>();
-    public int edgeDelayTicks = 2;
 
     // ===== [protection] 保护机制 =====
     public int maxMspt = 40;
     public int disableMspt = 50;
-    public double maxMemoryPercent = 75;
-    public int ticketExpiryTicks = 100; // 5 秒 grace period
-    public boolean autoLiteMode = true;
-    public int liteModeRadius = 6;
 
     /**
      * v0.11.6 非阻塞碰撞查询 (治"墙"/"停摆"/"无 C2ME 崩"的根因).
@@ -163,9 +150,6 @@ public class ChunkPilotConfig {
     // ===== [forward_window] v0.11.6 前瞻窗口 (生成侧锚点票 + 发送侧跟踪窗口前移) =====
     public ForwardWindowConfig forwardWindow = new ForwardWindowConfig();
 
-    // ===== [client_render] v0.4.0 客户端自适应渲染 =====
-    public ClientRenderConfig chunkRender = new ClientRenderConfig();
-
     // ===== 内部：默认值 =====
     boolean initialized = false;
 
@@ -173,29 +157,12 @@ public class ChunkPilotConfig {
         if (initialized) return;
         initialized = true;
         speedTiers.clear();
-        interestingStructures.clear();
 
         // 默认速度档位
         speedTiers.add(new SpeedTier("walk",           0.00, 0.75, -1,   0,   0, 0));
         speedTiers.add(new SpeedTier("slow_flight",    0.75, 1.50,  4, 120,  -1, 3));
         speedTiers.add(new SpeedTier("fast_flight",    1.50, 2.50,  4,  70,  -1, 2));
         speedTiers.add(new SpeedTier("extreme_flight", 2.50, 999.0, 3,  35,  -2, 1));
-
-        // 默认结构白名单
-        interestingStructures.add("minecraft:village");
-        interestingStructures.add("minecraft:desert_pyramid");
-        interestingStructures.add("minecraft:jungle_temple");
-        interestingStructures.add("minecraft:shipwreck");
-        interestingStructures.add("minecraft:ocean_ruin");
-        interestingStructures.add("minecraft:buried_treasure");
-        interestingStructures.add("minecraft:pillager_outpost");
-        interestingStructures.add("minecraft:mansion");
-        interestingStructures.add("minecraft:monument");
-        interestingStructures.add("minecraft:ancient_city");
-        interestingStructures.add("minecraft:fortress");
-        interestingStructures.add("minecraft:bastion_remnant");
-        interestingStructures.add("minecraft:stronghold");
-        interestingStructures.add("minecraft:end_city");
     }
 
     /** 从外部重新加载（保留 initialized 标志并覆盖字段） */
@@ -271,10 +238,9 @@ public class ChunkPilotConfig {
         // (已存在则绝不覆盖; 失败只告警) —— 否则新装服务器不会有任何配置文件,
         // jar 里那份带逐键说明的模板 (120 键, 含 [forward_window] 等整节) 也就永远看不见.
         ConfigBootstrap.releaseIfAbsent();
-        // 注意: 不再无条件清空默认档位/结构白名单. 若 toml 存在但没写对应节,
+        // 注意: 不再无条件清空默认档位. 若 toml 存在但没写对应节,
         // 默认值会保留 (否则用户写个只有 [general] 的 toml 会让整个 mod 静默失效).
-        // 清空/替换动作交给 ConfigLoader: 只有真正遇到 [[speedTiers.tier]] 或
-        // interestingStructures 键时才用用户值替换默认值.
+        // 清空/替换动作交给 ConfigLoader: 只有真正遇到 [[speedTiers.tier]] 时才用用户档位替换默认档位.
         try {
             ConfigLoader.loadFromToml(config, locateConfigFile());
         } catch (Throwable t) {

@@ -5,7 +5,6 @@ import com.chunkpilot.config.ChunkPilotConfig.SpeedTier;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -140,7 +139,6 @@ public class ConfigLoader {
 
         System.out.println("[ChunkPilot] Config loaded: enabled=" + config.enabled
             + ", speedTiers=" + config.speedTiers.size()
-            + ", structures=" + config.interestingStructures.size()
             + ", integrationEnabled=" + config.integrationEnabled
             + ", generation.enabled=" + config.generation.enabled
             // v0.11.10: 把非阻塞开关族一起打出来 —— 否则"配置里写了 true/false 到底有没有被解析到"
@@ -192,7 +190,6 @@ public class ConfigLoader {
                 case "general" -> {
                     switch (key) {
                         case "enabled" -> cfg.enabled = parseBool(value);
-                        case "mode" -> cfg.mode = value;
                         case "logLevel" -> cfg.logLevel = value;
                         case "language" -> cfg.language = value;
                     }
@@ -206,33 +203,13 @@ public class ConfigLoader {
                     }
                 }
                 case "speedTiers" -> {
-                    switch (key) {
-                        case "curveMode" -> cfg.curveMode = value;
-                        case "customFormula" -> cfg.customFormula = value;
-                    }
-                }
-                case "structure" -> {
-                    switch (key) {
-                        case "enabled" -> cfg.structureEnabled = parseBool(value);
-                        case "priorityLoading" -> cfg.structurePriorityLoading = parseBool(value);
-                        case "edgeDelayTicks" -> cfg.edgeDelayTicks = parseInt(value);
-                        case "interestingStructures" -> {
-                            List<String> list = parseStringArray(value);
-                            if (!list.isEmpty()) {
-                                cfg.interestingStructures.clear();
-                                cfg.interestingStructures.addAll(list);
-                            }
-                        }
-                    }
+                    // 1.0.0: curveMode / customFormula 已删除 (只被解析、零处读取);
+                    //   [[speedTiers.tier]] 的档位表解析仍在上面的 currentTier 分支里.
                 }
                 case "protection" -> {
                     switch (key) {
                         case "maxMspt" -> cfg.maxMspt = parseInt(value);
                         case "disableMspt" -> cfg.disableMspt = parseInt(value);
-                        case "maxMemoryPercent" -> cfg.maxMemoryPercent = parseDouble(value);
-                        case "ticketExpiryTicks" -> cfg.ticketExpiryTicks = parseInt(value);
-                        case "autoLiteMode" -> cfg.autoLiteMode = parseBool(value);
-                        case "liteModeRadius" -> cfg.liteModeRadius = parseInt(value);
                         case "nonBlockingCollision" -> cfg.nonBlockingCollision = parseBool(value);
                         case "nonBlockingReads" -> cfg.nonBlockingReads = parseBool(value);
                         case "nonBlockingGetChunk" -> cfg.nonBlockingGetChunk = parseBool(value);
@@ -291,8 +268,6 @@ public class ConfigLoader {
                         case "v_min" -> cfg.chunkSend.v_min = parseDouble(value);
                         case "k" -> cfg.chunkSend.k = parseDouble(value);
                         case "lookAheadSeconds" -> cfg.chunkSend.lookAheadSeconds = parseDouble(value);
-                        case "direction_gamma" -> cfg.chunkSend.direction_gamma = parseDouble(value);
-                        case "v_boost_beta" -> cfg.chunkSend.v_boost_beta = parseDouble(value);
                     }
                 }
                 case "forward_window" -> {
@@ -310,21 +285,8 @@ public class ConfigLoader {
                     }
                 }
                 case "client_render" -> {
-                    // v0.8.0 客户端自适应渲染配置 (统一公式 + 发送器参数集)
-                    switch (key) {
-                        case "enabled" -> cfg.chunkRender.enabled = parseBool(value);
-                        case "target_fps" -> cfg.chunkRender.target_fps = parseInt(value);
-                        case "v_min" -> cfg.chunkRender.v_min = parseDouble(value);
-                        case "k" -> cfg.chunkRender.k = parseDouble(value);
-                        case "lookAheadSeconds" -> cfg.chunkRender.lookAheadSeconds = parseDouble(value);
-                        case "direction_gamma" -> cfg.chunkRender.direction_gamma = parseDouble(value);
-                        case "v_boost_beta" -> cfg.chunkRender.v_boost_beta = parseDouble(value);
-                        case "frame_window" -> cfg.chunkRender.frame_window = parseInt(value);
-                        case "stable_threshold_ms" -> cfg.chunkRender.stable_threshold_ms = parseDouble(value);
-                        case "overload_factor" -> cfg.chunkRender.overload_factor = parseDouble(value);
-                        case "underload_factor" -> cfg.chunkRender.underload_factor = parseDouble(value);
-                        case "sodium_compatible" -> cfg.chunkRender.sodium_compatible = parseBool(value);
-                    }
+                    // 1.0.0: [client_render] 整节随"客户端渲染优先级"链路一起删除.
+                    //   旧配置里的本节键现在落到 default 分支, 静默忽略 (不报错, 不影响其它键).
                 }
                 default -> {
                     // [integration.xxx]
@@ -393,45 +355,5 @@ public class ConfigLoader {
 
     private static double parseDoubleSilent(String s) {
         try { return Double.parseDouble(s); } catch (Exception e) { return 0; }
-    }
-
-    /** 解析 [ "a", "b", "c" ] 或 [a, b, c] 两种形式. 正确剥离每个 token 的引号. */
-    private static List<String> parseStringArray(String s) {
-        List<String> result = new ArrayList<>();
-        s = s.trim();
-        if (!s.startsWith("[")) return result;
-        s = s.substring(1);
-        if (s.endsWith("]")) s = s.substring(0, s.length() - 1);
-        // 按逗号分割（不在引号内）；引号内容不包含首尾引号
-        StringBuilder cur = new StringBuilder();
-        boolean inQuote = false;
-        char quoteChar = 0;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (inQuote) {
-                if (c == quoteChar) {
-                    inQuote = false; // 闭引号, 不 append
-                } else {
-                    cur.append(c);
-                }
-            } else {
-                if (c == '"' || c == '\'') {
-                    inQuote = true;
-                    quoteChar = c;
-                    cur.setLength(0); // 开引号, 开始一个新 token
-                } else if (c == ',') {
-                    String v = cur.toString().trim();
-                    if (!v.isEmpty()) result.add(v);
-                    cur.setLength(0);
-                } else {
-                    cur.append(c);
-                }
-            }
-        }
-        if (cur.length() > 0) {
-            String v = cur.toString().trim();
-            if (!v.isEmpty()) result.add(v);
-        }
-        return result;
     }
 }
