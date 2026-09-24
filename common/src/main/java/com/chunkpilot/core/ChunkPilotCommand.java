@@ -492,7 +492,6 @@ public class ChunkPilotCommand {
         StringBuilder sb = new StringBuilder();
         sb.append(prefix()).append(I18n.trFor(executorId, "chunkpilot.command.config.header"));
         kv(sb, executorId, "general.enabled", c.enabled);
-        kv(sb, executorId, "general.mode", c.mode);
         kv(sb, executorId, "general.logLevel", c.logLevel);
         kv(sb, executorId, "general.language", c.language);
         kv(sb, executorId, "speed.windowTicks", c.speedWindowTicks);
@@ -516,7 +515,6 @@ public class ChunkPilotCommand {
         kv(sb, executorId, "protection.disableMspt", c.disableMspt);
         kv(sb, executorId, "protection.nonBlockingCollision", c.nonBlockingCollision);
         kv(sb, executorId, "protection.nonBlockingGetChunk", c.nonBlockingGetChunk);
-        kv(sb, executorId, "protection.ticketExpiryTicks", c.ticketExpiryTicks);
         kv(sb, executorId, "integration.enabled", c.integrationEnabled);
         kv(sb, executorId, "integration.mtr.enabled", c.mtr.enabled);
         kv(sb, executorId, "integration.immersive_railroading.enabled", c.immersiveRailroading.enabled);
@@ -756,8 +754,6 @@ public class ChunkPilotCommand {
         kvUnit(sb, executorId, "chunk_send.v_min", s.v_min,
                 I18n.trFor(executorId, "chunkpilot.unit.chunks_per_second"));
         kv(sb, executorId, "chunk_send.k", s.k);
-        kv(sb, executorId, "chunk_send.direction_gamma", s.direction_gamma);
-        kv(sb, executorId, "chunk_send.v_boost_beta", s.v_boost_beta);
         kvUnit(sb, executorId, "chunk_send.lookAheadSeconds", s.lookAheadSeconds,
                 I18n.trFor(executorId, "chunkpilot.unit.seconds"));
         if (!s.enabled) {
