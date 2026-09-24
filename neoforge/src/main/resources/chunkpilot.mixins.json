@@ -6,9 +6,15 @@
   "refmap": "chunkpilot.refmap.json",
   "mixins": [
     "ChunkMapMixin",
+    "ChunkMapGenerationMixin",
+    "ChunkMapTrackingViewMixin",
     "ConnectionNetTrackerMixin",
+    "LevelNonBlockingReadMixin",
     "PlayerChunkSenderMixin",
     "PlayerChunkSenderSendMixin",
+    "ServerChunkCacheAccessor",
+    "ServerChunkCacheNonBlockingMixin",
+    "ServerGamePacketListenerMoveMixin",
     "ServerPlayerMixin",
     "CheckExtensibleEnumsMixin"
   ],

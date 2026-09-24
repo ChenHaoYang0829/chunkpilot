@@ -92,6 +92,14 @@ public class ChunkPilotNeoForge {
         var cp = ChunkPilot.getInstance();
         if (cp == null) return;
 
+        // v0.9.0 (neoforge 补齐): 清空本 tick 的 CP 请求集合.
+        //   随后 cp.getOptimizer().onServerTick() 会通过 requestChunkAsync 重新填充,
+        //   ChunkMapGenerationMixin 在 runGenerationTask 里查这个集合决定"是否提投递优先级".
+        //   与 fabric 侧 ServerInitializer 的同名调用逐字对应 (只换平台类名).
+        try {
+            com.chunkpilot.neoforge.platform.NeoForgePlatform.clearRequestedChunks();
+        } catch (Throwable ignored) {}
+
         // v0.2.0 优化器 tick (扇形/ticket/集成)
         cp.getOptimizer().onServerTick();
 
@@ -135,6 +143,30 @@ public class ChunkPilotNeoForge {
             // 调度器异常不应上抛, 否则下一次 onServerTick 会被 NeoForge 取消订阅
             LOGGER.warn("[ChunkPilot] GenerationScheduler tick failed: {}", t.toString());
         }
+
+        // v0.9.0 安全网 (neoforge 补齐, 与 fabric ServerInitializer 逐字对应):
+        //   始终把玩家脚下周围一小片 (正方形 r=2) 标记为 CP 请求.
+        //   即使 CP 生成器因某种原因没请求到这些 chunk, 也保证它们不会被
+        //   ChunkMapGenerationMixin 的优先级判断漏掉 (玩家不能站在未生成的 chunk 上;
+        //   r=2 覆盖玩家落地/转向/重生时周围一圈). 注意: 这里只影响**排序优先级**,
+        //   从不取消任何原版生成任务 ⇒ 即便集合漏标也只会退化成"原版顺序", 不会死锁.
+        try {
+            MinecraftServer srv = ServerLifecycleHooks.getCurrentServer();
+            if (srv != null) {
+                for (ServerPlayer sp : srv.getPlayerList().getPlayers()) {
+                    if (sp.level() instanceof ServerLevel) {
+                        int cx = sp.chunkPosition().x;
+                        int cz = sp.chunkPosition().z;
+                        for (int dx = -2; dx <= 2; dx++) {
+                            for (int dz = -2; dz <= 2; dz++) {
+                                com.chunkpilot.neoforge.platform.NeoForgePlatform.markChunkRequested(
+                                    net.minecraft.world.level.ChunkPos.asLong(cx + dx, cz + dz));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
 
         // v0.4.0: 网络调度器 tick (发送优先级提示)
         try {

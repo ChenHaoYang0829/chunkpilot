@@ -30,6 +30,60 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     private static final Map<UUID, ServerPlayer> PLAYER_CACHE = new ConcurrentHashMap<>();
 
+    // ==================================================================================
+    // v0.11.6 (neoforge 平台补齐): CP 生成集合
+    //
+    // 为什么必须有: 本次新增的 `ChunkMapGenerationMixin` 要靠这两个集合判断"哪些 chunk 是 CP 自己要的",
+    // 才能只对它们提投递优先级。fabric 侧由 `FabricPlatform` 的同名静态集合提供; neoforge 侧此前
+    // **一个都没有** ⇒ 即便移植了 mixin, `exclusiveGenerationNoC2me` 也会永远判定"不是 CP 的 chunk"。
+    //
+    // 语义与 FabricPlatform 逐条一致 (main 作业书 §3.1 "语义等价优先"):
+    //   requestedChunks  —— 本 tick CP 生成器请求的 chunk, 每 tick 开头清空 (ChunkPilotNeoForge.onServerTick);
+    //   ticketedChunks   —— 跨 tick 持久的"有活跃 CP 票"的 chunk, 由 add/removeChunkTicket 维护,
+    //                       并定期用真实活跃票集合重建 (rebuildCpTicketMarks), 防只增不减的泄漏。
+    // ==================================================================================
+    private static final java.util.Set<Long> requestedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<Long> ticketedChunks =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 标记某 chunk 为 CP 想生成的 (由 requestChunkAsync / 每 tick 玩家脚下安全网调用). */
+    public static void markChunkRequested(long chunkPosLong) {
+        requestedChunks.add(chunkPosLong);
+    }
+
+    /** 查询某 chunk 是否被 CP 请求生成 (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkRequestedByCp(long chunkPosLong) {
+        return requestedChunks.contains(chunkPosLong);
+    }
+
+    /** 清空本 tick 的 CP 请求集合 (每 tick 开头由 ChunkPilotNeoForge.onServerTick 调用). */
+    public static void clearRequestedChunks() {
+        requestedChunks.clear();
+    }
+
+    /** 查询某 chunk 是否有活跃 CP ticket (ChunkMapGenerationMixin 调用). */
+    public static boolean isChunkTicketedByCp(long chunkPosLong) {
+        return ticketedChunks.contains(chunkPosLong);
+    }
+
+    private static void markChunkTicketed(long chunkPosLong) {
+        ticketedChunks.add(chunkPosLong);
+    }
+
+    private static void unmarkChunkTicketed(long chunkPosLong) {
+        ticketedChunks.remove(chunkPosLong);
+    }
+
+    /** v0.11.4: 用真实活跃票集合重建标记集合 (只增不减会留下永久残留). */
+    @Override
+    public void rebuildCpTicketMarks(java.util.Collection<Long> activeChunkPositions) {
+        ticketedChunks.clear();
+        if (activeChunkPositions != null && !activeChunkPositions.isEmpty()) {
+            ticketedChunks.addAll(activeChunkPositions);
+        }
+    }
+
     // ChunkPilot 自定义 ticket 类型.
     //
     // ===== 1.21.9 票据 API 重写 (2026-09-24 port/1.21.9) — 与 fabric 侧同一套改法 =====
@@ -129,6 +183,9 @@ public class NeoForgePlatform implements PlatformAbstraction {
         // v0.10: 直接指定加载等级, 支持远处浅层加载 (1.21.9: 走 TicketStorage)
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         ticketStorage(world).addTicket(new Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
+        // v0.10.4 (neoforge 补齐): 标记该 chunk 有活跃 CP ticket, 让 ChunkMapGenerationMixin
+        //   放行其生成 (不误取消 sector 生成). 与 FabricPlatform.addChunkTicket 同语义.
+        markChunkTicketed(pos.toLong());
         return true;
     }
 
@@ -141,6 +198,8 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         ticketStorage(world).removeTicket(new Ticket(CHUNKPILOT_TICKET, ticketLevel), pos);
+        // 与 addChunkTicket 对称: 取消该 chunk 的 CP ticket 标记
+        unmarkChunkTicketed(pos.toLong());
         return true;
     }
 
@@ -183,6 +242,11 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
             ServerLevel level = findWorld(server, worldId);
             if (level == null) return false;
+
+            // v0.9.0 (neoforge 补齐): 标记该 chunk 为 CP 想生成的.
+            //   ChunkMapGenerationMixin 在 runGenerationTask 里查这个集合, 只对 CP 自己的
+            //   chunk 提投递优先级 (绝不丢任务). 与 FabricPlatform.requestChunkAsync 同语义.
+            markChunkRequested(ChunkPos.asLong(chunkX, chunkZ));
 
             // 检测 C2ME
             if (isC2MEPresent()) {
@@ -565,11 +629,33 @@ public class NeoForgePlatform implements PlatformAbstraction {
 
     /**
      * 取"可见表里的 ChunkHolder"。
-     * 1.21.9 javap: `ServerChunkCache.getVisibleChunkIfPresent(long)` 是 package-private,
-     * 且 1.21.1/1.21.3 里的 `getChunkHolder(long)` 早已不存在 ⇒ 只能反射。
-     * NeoForge 运行期 = Mojang 官方名, 所以按名反射可行; 失败就返回 null (探针降级, 只少票等级)。
+     *
+     * ============================ v0.11.6 (B3 专项) 的修法变更 ============================
+     * 原来只有"按名反射 `getVisibleChunkIfPresent`"这一条路。作业书指出: 这几个版本上
+     * **反射会被 NeoForge 的具名 module 层挡住** (`setAccessible` 受限) ⇒ `probeChunk` 里的
+     * `ticketLevel` 恒 **-1**、`levelType` 恒 "unknown"。
+     *
+     * 现在优先走**本模块新增的 mixin accessor** `ServerChunkCacheAccessor.chunkpilot$getVisibleChunkIfPresent`
+     * —— 它在字节码层直接调用目标方法, **完全绕开 setAccessible 与模块系统**。
+     *   1. 先判 `instanceof` (而不是强转): accessor mixin 若因任何原因没应用, 这里只是 `false`,
+     *      不会抛 ClassCastException;
+     *   2. 反射作为**第二兜底**保留 (语义与原实现完全一致), 两条路都失败才返回 null。
+     *
+     * 只影响**探针显示**, 不参与任何决策逻辑 —— 探针的 CP 生效判据仍是 `loaded=` 那一列
+     * (作业书: "判 CP 是否生效要看 `loaded` 与 `lead_loaded_srv`, 不要用 ticketLevel 下结论")。
      */
     private static Object chunkpilot$visibleHolder(ServerLevel level, long posLong) {
+        // 1) 首选: mixin accessor (无反射, 无模块系统限制)
+        try {
+            Object source = level.getChunkSource();
+            if (source instanceof com.chunkpilot.neoforge.mixin.ServerChunkCacheAccessor acc) {
+                Object holder = acc.chunkpilot$getVisibleChunkIfPresent(posLong);
+                if (holder != null) return holder;
+            }
+        } catch (Throwable ignored) {
+            // accessor 不可用时继续走反射兜底
+        }
+        // 2) 兜底: 按名反射 (NeoForge 运行期 = Mojang 官方名)
         try {
             Object source = level.getChunkSource();
             for (Class<?> c = source.getClass(); c != null; c = c.getSuperclass()) {
