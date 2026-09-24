@@ -18,6 +18,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * rx 字节数 = Mojang 内置 BandwidthDebugMonitor.bytesReceived 累加器（这个是真的字节数）
  * tx 字节数 = 自维护 counter（按 packet type 估算，因为 vanilla 不暴露 tx 字节数）
  */
+// 2026-09-25 (二阶段整改项 1, 按主代理硬要求): 本模块的 mixin 注入一律 `require = 0, expect = 0`。
+//   理由: 这些类用的是**硬编码 descriptor / 可读方法名**, 版本一漂移就会在**启动期**报
+//   InvalidInjectionException → MixinApplyError → ModLoadingException (1.21.11 的
+//   ConnectionNetTrackerMixin 就是这么崩的)。软失败只会丢一项增强, 不会让服务端起不来。
+//   功能是否真的生效由**服务端探针 + 飞行跑分**验收, 不靠"启动成功"。
 @Mixin(Connection.class)
 public class ConnectionNetTrackerMixin {
 
@@ -31,7 +36,8 @@ public class ConnectionNetTrackerMixin {
     //     **启动时**报 `InvalidInjectionException: could not find any targets` → `MixinApplyError`
     //     → `ModLoadingException` → 服务端起不来。本版本第一轮 neoforge 启动就是这样崩的
     //     (日志: `Couldn't find Minecraft server thread`)。已改为新 descriptor。
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V", at = @At("HEAD"))
+    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V",
+            at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onSend(Packet<?> packet, io.netty.channel.ChannelFutureListener listener, boolean flush, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
@@ -47,7 +53,7 @@ public class ConnectionNetTrackerMixin {
         }
     }
 
-    @Inject(method = "channelRead0", at = @At("HEAD"))
+    @Inject(method = "channelRead0", at = @At("HEAD"), require = 0, expect = 0)
     private void chunkpilot$onChannelRead(ChannelHandlerContext ctx, Packet<?> packet, CallbackInfo ci) {
         try {
             Connection self = (Connection) (Object) this;
