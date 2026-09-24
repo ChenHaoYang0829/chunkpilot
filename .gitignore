@@ -62,3 +62,8 @@ bench_client/windows_agent/test_v090/
 #   bash scripts/setup_local_maven_repo.sh          # 软链或复制到当前仓库根
 # 或者直接用一份现成的: /data/cp-port/artifacts/_tools/local-maven-repo/
 .local-maven-repo
+
+# Python 编译产物(仓库卫生: scripts/ 下此前漏了)
+scripts/__pycache__/
+__pycache__/
+*.pyc
