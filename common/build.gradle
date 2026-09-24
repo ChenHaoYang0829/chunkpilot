@@ -7,6 +7,10 @@
 dependencies {
     // 依赖 fabric loader 仅用于 @Environment 注解
     implementation "net.fabricmc:fabric-loader:${rootProject.fabricLoaderVersion}"
+    // 2026-09-24 (port/26.2): common 不再通过 loom 的 MC 依赖传递拿到 slf4j(MC 26.2 的 server.jar
+    //   内置 slf4j-api 2.0.17 / log4j-slf4j2-impl 2.26.0; 见 META-INF/libraries.list)。
+    //   这里显式声明 compileOnly 之外的 implementation —— 运行期由服务端/MC 提供同一份。
+    implementation "org.slf4j:slf4j-api:2.0.17"
 
 
     // P0: 单元测试 — common 模块零 MC 引用, 测试也只用 JUnit + chunkpilot.* 类

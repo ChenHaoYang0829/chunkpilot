@@ -43,10 +43,18 @@ sourceSets {
     }
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
-}
+// 2026-09-24 (port/26.2): 以下三个 loom 时代的任务**已删除**:
+//   ① `tasks.named('remapJar') { enabled = false }` —— 26.x 没有 remapJar 任务(moddev 不重映射);
+//   ② `fixRefmap` 里**硬编码的 Mojang refmap JSON** —— 那是为"运行期 Mojang 名 + 编译期也 Mojang 名,
+//      但 loom 只生成 intermediary refmap"这个 1.21.x 特有的矛盾打的补丁。26.x 运行期==编译期,
+//      mixin 注解里的目标名可以直接命中, 不需要任何 refmap;
+//   ③ `afterEvaluate { jar finalizedBy fixRefmap }`。
+//   保留它们会在 26.x 上把一份**过时的** refmap 塞进 jar(descriptor 是 1.21.x 时代的),
+//   正是 AGENT_BRIEF §13 说的"编译过但运行静默失效"那一类风险。
+//
+// ⚠ 但 main 在 fixRefmap 里修过一处**产物卫生**问题, 这里必须保留其语义:
+//   'ant.unjar 只覆盖不删除' ⇒ 源码里删掉的 class 会残留在新 jar 里。
+//   26.x 用 moddev 的 `jar` 任务, 它每次都从 build/classes 重新打包, 结构上不存在这个残留问题。
 
 // 元数据里的 MC 版本区间与 mod 版本改为构建期展开, 不再手写
 //   手写区间有两个坑: ① 漏改 ⇒ jar 在目标版本上被直接拒绝;
