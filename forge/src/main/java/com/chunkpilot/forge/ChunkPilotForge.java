@@ -3,10 +3,8 @@ package com.chunkpilot.forge;
 import com.chunkpilot.ChunkPilot;
 import com.chunkpilot.config.ChunkPilotConfig;
 import com.chunkpilot.core.ChunkPilotCommand;
-import com.chunkpilot.forge.network.ForgeNetworkSender;
 import com.chunkpilot.forge.platform.ForgePlatform;
 import com.chunkpilot.generation.GenerationScheduler;
-import com.chunkpilot.network.PlatformNetworkSender;
 import com.chunkpilot.platform.PlatformAbstraction;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -64,27 +62,9 @@ public class ChunkPilotForge {
         PlatformAbstraction platform = new ForgePlatform();
         new ChunkPilot(platform);
 
-        // v0.4.0 网络: Forge 47 走 SimpleChannel (NetworkRegistry.newSimpleChannel), 见 ForgeNetworkSender
-        ForgeNetworkSender networkSender = new ForgeNetworkSender();
-        networkSender.register();
-
-        ChunkPilot cp = ChunkPilot.getInstance();
-        if (cp != null) {
-            cp.initNetwork(networkSender);
-            networkSender.registerServerReceivers(new PlatformNetworkSender.ServerPacketHandler() {
-                @Override
-                public void onClientCapability(UUID playerId, boolean clientHasCP, int protocolVersion) {
-                    ChunkPilot.getInstance().getNetworkDispatcher()
-                        .onClientCapability(playerId, clientHasCP, protocolVersion);
-                }
-
-                @Override
-                public void onClientConfigOverride(UUID playerId, com.chunkpilot.network.ClientConfigOverridePacket packet) {
-                    ChunkPilot.getInstance().getNetworkDispatcher()
-                        .onClientConfigOverride(playerId, packet);
-                }
-            });
-        }
+        // 1.0.0: 服务端↔客户端优先级协议已整体删除 (见 PORTING_REPORT: registerClientReceivers/
+        //   sendClientCapability/sendConfigOverride 零调用 ⇒ cpEnabledClients 恒空 ⇒ 一个 PriorityHint
+        //   都不会真的发出). 同 fabric/neoforge 两侧的清理.
 
         // 游戏总线: tick / 玩家登录登出 / 服务器生命周期 / 命令注册
         MinecraftForge.EVENT_BUS.register(this);
@@ -183,24 +163,6 @@ public class ChunkPilotForge {
             LOGGER.warn("[ChunkPilot] GenerationScheduler tick failed: {}", t.toString());
         }
 
-        // v0.4.0: 网络调度器 tick (发送优先级提示)
-        try {
-            var dispatcher = cp.getNetworkDispatcher();
-            if (dispatcher != null) {
-                var tracker = cp.getOptimizer().getSpeedTracker();
-                var playerPositions = new java.util.HashMap<UUID, int[]>();
-                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-                if (server != null) {
-                    for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
-                        playerPositions.put(sp.getUUID(),
-                            new int[]{sp.blockPosition().getX() >> 4, sp.blockPosition().getZ() >> 4});
-                    }
-                    dispatcher.onServerTick(tracker, playerPositions);
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.warn("[ChunkPilot] NetworkDispatcher tick failed: {}", t.toString());
-        }
     }
 
     // ==================== 玩家 ====================
@@ -209,13 +171,6 @@ public class ChunkPilotForge {
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             ForgePlatform.registerPlayer(sp);
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerConnect(sp.getUUID());
-            }
-            // 1.20.1 **没有 configuration 阶段** (1.20.2+ 才有), 原来的"配置阶段握手"在本版本
-            //   永远走不到 ⇒ 改成登录后由服务端主动下发一次 capability (同 fabric/1.20.1 的做法)。
-            ForgeNetworkSender.sendCapabilityOnJoin(sp, ChunkPilot.VERSION, ForgeNetworkSender.PROTOCOL_VERSION);
             LOGGER.info("[ChunkPilot] Player logged in: {} (uuid={}, cache size={})",
                 sp.getName().getString(), sp.getUUID(), ForgePlatform.getCacheSize());
         }
@@ -230,10 +185,6 @@ public class ChunkPilotForge {
                 if (optimizer.getIntegrationManager() != null) {
                     optimizer.getIntegrationManager().onPlayerRemoved(sp.getUUID());
                 }
-            }
-            var dispatcher = ChunkPilot.getInstance().getNetworkDispatcher();
-            if (dispatcher != null) {
-                dispatcher.onPlayerDisconnect(sp.getUUID());
             }
             ForgePlatform.unregisterPlayer(sp);
         }

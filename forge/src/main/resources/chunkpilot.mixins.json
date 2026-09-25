@@ -12,10 +12,7 @@
     "ServerGamePacketListenerMoveMixin",
     "ServerChunkCacheNonBlockingMixin"
   ],
-  "client": [
-    "client.ChunkRenderDispatcherMixin",
-    "client.SodiumRenderSectionManagerMixin"
-  ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

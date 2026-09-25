@@ -1,83 +1,26 @@
 package com.chunkpilot.forge.client;
 
-import com.chunkpilot.ChunkPilot;
-import com.chunkpilot.client.ChunkPilotClient;
-import com.chunkpilot.config.ChunkPilotConfig;
-
 /**
- * ChunkPilot Forge 客户端入口。
+ * Forge 1.20.1 客户端侧入口 —— 1.0.0 起只剩一行日志.
  *
- * 与 {@code ChunkPilotNeoForgeClient} 同构: **不使用任何客户端专用类** (Minecraft / Level /
- * ChunkRenderDispatcher 全部走反射), 所以这个类在专用服务端上被加载也不会 NoClassDefFoundError。
- * 由 {@link ChunkPilotForgeClientEvents} 在客户端 tick 时驱动。
+ * 1.0.0 之前这里初始化"客户端渲染优先级"链路 (ChunkPilotClient / ChunkRenderScheduler /
+ * Sodium + vanilla 两个客户端 Mixin). 该链路**从未真正生效**: ChunkPilotClient 的静态单例
+ * 只在 init() 里赋值, 而 init() 的唯一调用点是自己那个零外部引用的类; 两个客户端 Mixin 的
+ * 注入方法首行就是 `if (client == null) return;`. 已整体删除 (见 PORTING_REPORT §7.3b 同类清理).
  *
- * 注意 (与 neoforge 模块的差异): main 的 neoforge 模块里 ChunkPilotNeoForgeClient **从未被调用**
- * (入口类里没有任何一处引用它) —— 那是既有缺陷。这里补上了真实接线:
- * {@code ChunkPilotForge} 在 Dist.CLIENT 时注册 ClientTickEvent 监听器 → onClientTick()。
+ * 本类保留的理由: 产物里"服务端与客户端在同一个 jar"是硬性要求, 交付校验按 /client/ 路径
+ * 统计客户端 class 数. 由 {@link ChunkPilotForgeClientEvents} 在客户端首个 tick 调用一次.
  */
-public class ChunkPilotForgeClient {
+public final class ChunkPilotForgeClient {
 
-    private static long lastTickTime = 0;
-    private static boolean initialized = false;
+    private ChunkPilotForgeClient() {}
 
+    private static boolean announced = false;
+
+    /** 仅在客户端物理侧被调用一次 (见 ChunkPilotForgeClientEvents). */
     public static void init() {
-        if (initialized) return;
-        initialized = true;
-
-        ChunkPilotConfig config = ChunkPilot.getInstance() != null
-            ? ChunkPilot.getInstance().getConfig() : null;
-        ChunkPilotClient.init(config);
-
-        boolean sodiumLoaded = false;
-        try {
-            Class.forName("net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer");
-            sodiumLoaded = true;
-        } catch (Throwable ignored) {
-        }
-        ChunkPilotClient.getInstance().setSodiumDetected(sodiumLoaded);
-
-        if (sodiumLoaded) {
-            System.out.println("[ChunkPilot] Sodium detected, using Sodium-compatible render path");
-        } else {
-            System.out.println("[ChunkPilot] Sodium not detected, using vanilla render path");
-        }
-    }
-
-    /** 每客户端 tick 调用。用反射取 Minecraft / 玩家位置, 避免编译期依赖客户端类。 */
-    public static void onClientTick() {
-        init();
-
-        ChunkPilotClient client = ChunkPilotClient.getInstance();
-        if (client == null || !client.isEnabled()) return;
-
-        try {
-            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
-            Object mc = mcClass.getMethod("getInstance").invoke(null);
-            Object player = mcClass.getMethod("player").invoke(mc);
-            if (player == null) return;
-
-            Object blockPos = player.getClass().getMethod("blockPosition").invoke(player);
-            int blockX = (int) blockPos.getClass().getMethod("getX").invoke(blockPos);
-            int blockZ = (int) blockPos.getClass().getMethod("getZ").invoke(blockPos);
-
-            Object deltaMove = player.getClass().getMethod("getDeltaMovement").invoke(player);
-            double dx = (double) deltaMove.getClass().getField("x").get(deltaMove);
-            double dz = (double) deltaMove.getClass().getField("z").get(deltaMove);
-            double speedBpt = Math.sqrt(dx * dx + dz * dz);
-            double direction = 0;
-            if (dx != 0 || dz != 0) {
-                direction = Math.atan2(dz, dx);
-            }
-
-            client.updatePlayerState(blockX >> 4, blockZ >> 4, speedBpt, direction);
-
-            long now = System.nanoTime();
-            if (lastTickTime > 0) {
-                client.onFrameEnd(now - lastTickTime);
-            }
-            lastTickTime = now;
-        } catch (Throwable t) {
-            // 反射失败 → 静默 (客户端渲染路径不能因为 CP 崩)
-        }
+        if (announced) return;
+        announced = true;
+        System.out.println("[ChunkPilot] client side initialized (1.0.0: 客户端无渲染侧功能, 优化均来自服务端)");
     }
 }
