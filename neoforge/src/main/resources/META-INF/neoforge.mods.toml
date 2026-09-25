@@ -11,6 +11,11 @@ authors = "ChunkPilot Team"
 description = '''
 Smart chunk loading and rendering optimization for high-speed travel (elytra, trains, airships).
 '''
+# 模组列表图标。路径相对于 jar 根 (= neoforge/src/main/resources/icon.png),
+# 已验证与 architectury-neoforge 等模组的写法一致 (logoFile = "icon.png" 指向 jar 根)。
+# 注: Fabric 侧走 fabric.mod.json 的 "icon" 字段 (assets/chunkpilot/icon.png),
+#     两者共用同一张 128x128 图。
+logoFile = "icon.png"
 
 [[dependencies.chunkpilot]]
 modId = "neoforge"

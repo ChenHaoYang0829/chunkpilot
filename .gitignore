@@ -36,6 +36,12 @@ bench_client/__pycache__/
 *.png
 *.jpg
 
+# ===== 模组图标 (发布资源, 必须入仓) =====
+# 注意: 上面的 *.png 会连带忽略所有 png, 而模组图标是**必须入仓的发布资源** ——
+#   不放行的话 clone 出的仓库缺 icon.png, jar 里的图标引用会变成悬空引用。
+!common/src/main/resources/assets/chunkpilot/icon.png
+!neoforge/src/main/resources/icon.png
+
 # ===== 敏感 =====
 server.properties
 ops.json
